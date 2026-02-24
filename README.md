@@ -21,7 +21,7 @@ Traditional folder search depends on filenames and metadata. This tool uses **vi
 - HEIC/HEIF support via `pillow-heif`
 - Incremental indexing (mtime-based)
 - Fast search using in-memory NumPy matrix + dot-product similarity
-- SQLite-backed index (`photo_index.db`)
+- SQLite-backed index (persistent app-data DB by default)
 - CLI and Streamlit UI
 - One-click open in Finder (`open`)
 
@@ -144,11 +144,36 @@ Options:
 - `--batch-size` (default `32`): image embedding batch size
 - `--skip-log` (optional): write skip diagnostics TSV (`reason`, `path`, `detail`)
 - `--force` (optional): force re-index all supported files (ignore unchanged mtime)
-- global `--db` (default `photo_index.db`): SQLite file path
+- `--prune` (optional): remove DB rows for files under `--path` that no longer exist on disk
+- global `--db` (default `~/Library/Application Support/FindPhotoForMe/photo_index.db`): SQLite file path
 - global `--model` (default `ViT-B-32`)
 - global `--pretrained` (default `laion2b_s34b_b79k`)
 - global `--device` (optional: `mps`, `cpu`)
 - global `--verbose`
+
+## Index Storage Strategy
+
+Recommended for end users: keep one persistent DB file in macOS app-data location:
+
+- `~/Library/Application Support/FindPhotoForMe/photo_index.db`
+
+Why:
+
+- avoids re-indexing on every app restart
+- keeps data outside the repo working directory
+- works well for large libraries
+
+One DB can hold multiple photo roots because records are keyed by absolute `file_path`.
+
+Example:
+
+```bash
+python app.py --db "~/Library/Application Support/FindPhotoForMe/photo_index.db" index --path "/Volumes/ExternalDrive/Photos"
+python app.py --db "~/Library/Application Support/FindPhotoForMe/photo_index.db" index --path "/Volumes/AnotherDrive/Archive"
+python app.py --db "~/Library/Application Support/FindPhotoForMe/photo_index.db" search --query "cat"
+```
+
+If you prefer isolation, you can use separate DB files per root folder by passing different `--db` paths.
 
 ### `search`
 
@@ -205,7 +230,7 @@ HEIC/HEIF decode failures are skipped gracefully and logged.
 
 ## Database Schema
 
-SQLite DB: `photo_index.db`
+SQLite DB: user-configurable path (default: `~/Library/Application Support/FindPhotoForMe/photo_index.db`)
 
 Table `photos`:
 

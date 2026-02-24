@@ -10,7 +10,7 @@ from pathlib import Path
 from indexer import CLIPEmbedder, PhotoIndexer
 from searcher import PhotoSearcher
 from store import PhotoStore
-from utils import open_in_finder
+from utils import default_db_path, open_in_finder
 
 
 def configure_logging(verbose: bool = False) -> None:
@@ -33,7 +33,12 @@ def cmd_index(args: argparse.Namespace) -> int:
         )
         indexer = PhotoIndexer(store=store, embedder=embedder, batch_size=args.batch_size)
 
-        summary = indexer.index_folder(args.path, skip_log_path=args.skip_log, force_reindex=args.force)
+        summary = indexer.index_folder(
+            args.path,
+            skip_log_path=args.skip_log,
+            force_reindex=args.force,
+            prune_deleted=args.prune,
+        )
 
         print(f"Indexed:   {summary.total_indexed}")
         print(f"Skipped:   {summary.total_skipped}")
@@ -41,6 +46,7 @@ def cmd_index(args: argparse.Namespace) -> int:
         print(f"  - decode failures:       {summary.skipped_decode_failure}")
         print(f"Unchanged: {summary.total_unchanged}")
         print(f"Errors:    {summary.total_errors}")
+        print(f"Pruned:    {summary.total_pruned}")
         print(f"DB count:  {store.get_total_count()}")
         print(f"DB file:   {Path(store.db_path)}")
         if args.skip_log:
@@ -108,7 +114,7 @@ def cmd_search(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     """Build root argparse parser."""
     parser = argparse.ArgumentParser(description="Local private photo search using OpenCLIP embeddings")
-    parser.add_argument("--db", default="photo_index.db", help="Path to SQLite database file")
+    parser.add_argument("--db", default=default_db_path(), help="Path to SQLite database file")
     parser.add_argument("--model", default="ViT-B-32", help="OpenCLIP model name")
     parser.add_argument(
         "--pretrained",
@@ -136,6 +142,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--force",
         action="store_true",
         help="Re-index all supported files even when mtime is unchanged (useful to backfill new metadata fields)",
+    )
+    p_index.add_argument(
+        "--prune",
+        action="store_true",
+        help="Delete DB rows for files under --path that no longer exist on disk",
     )
     p_index.set_defaults(func=cmd_index)
 

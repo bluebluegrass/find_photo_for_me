@@ -10,12 +10,12 @@ import streamlit as st
 from indexer import CLIPEmbedder
 from searcher import PhotoSearcher, SearchResult
 from store import PhotoStore
-from utils import load_thumbnail_array, open_in_finder
+from utils import default_db_path, load_thumbnail_array, open_in_finder
 
 st.set_page_config(page_title="Photo Search", layout="wide")
 st.title("Photo Search")
 
-DB_PATH = "photo_index.db"
+DB_PATH = default_db_path()
 
 
 @st.cache_resource(show_spinner=False)

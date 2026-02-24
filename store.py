@@ -28,7 +28,9 @@ class PhotoStore:
     """SQLite-backed store for photo embeddings."""
 
     def __init__(self, db_path: str | Path = "photo_index.db") -> None:
-        self.db_path = str(Path(db_path).expanduser().resolve())
+        db_path_obj = Path(db_path).expanduser()
+        db_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        self.db_path = str(db_path_obj.resolve())
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.execute("PRAGMA journal_mode=WAL;")
         self.conn.execute("PRAGMA synchronous=NORMAL;")
@@ -172,3 +174,18 @@ class PhotoStore:
             """,
             (key, int(value)),
         )
+
+    def load_paths_under_root(self, root_path: str | Path) -> list[str]:
+        """Return indexed file paths that are under a specific root path."""
+        root = str(Path(root_path).expanduser().resolve())
+        if not root.endswith("/"):
+            root = root + "/"
+        rows = self.conn.execute("SELECT file_path FROM photos WHERE file_path LIKE ?", (f"{root}%",)).fetchall()
+        return [r[0] for r in rows]
+
+    def delete_paths(self, file_paths: list[str]) -> int:
+        """Delete a batch of paths from photos table and return deleted count."""
+        if not file_paths:
+            return 0
+        self.conn.executemany("DELETE FROM photos WHERE file_path = ?", [(p,) for p in file_paths])
+        return len(file_paths)

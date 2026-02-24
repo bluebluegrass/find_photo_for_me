@@ -14,6 +14,7 @@ from PIL import Image
 from pillow_heif import register_heif_opener
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+DEFAULT_APP_DB_PATH = Path.home() / "Library" / "Application Support" / "FindPhotoForMe" / "photo_index.db"
 
 _HEIF_REGISTERED = False
 _GPS_TAG = 34853
@@ -220,3 +221,8 @@ def choose_folder_dialog_macos(prompt: str = "Select photo folder to index") -> 
     except Exception:
         logging.exception("Failed to open macOS folder picker.")
         return None
+
+
+def default_db_path() -> str:
+    """Return recommended persistent DB path for macOS app data."""
+    return str(DEFAULT_APP_DB_PATH)

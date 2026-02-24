@@ -10,7 +10,7 @@ import streamlit as st
 from indexer import CLIPEmbedder, PhotoIndexer
 from searcher import PhotoSearcher, SearchResult
 from store import PhotoStore
-from utils import choose_folder_dialog_macos, load_thumbnail_array, open_in_finder
+from utils import choose_folder_dialog_macos, default_db_path, load_thumbnail_array, open_in_finder
 
 st.set_page_config(page_title="Local Photo Search", layout="wide")
 st.title("Local Private Photo Search")
@@ -49,6 +49,7 @@ def run_indexing(
     pretrained: str,
     batch_size: int,
     force_reindex: bool = False,
+    prune_deleted: bool = False,
 ) -> None:
     """Execute indexing and update Streamlit widgets."""
     root = Path(folder).expanduser().resolve()
@@ -69,7 +70,12 @@ def run_indexing(
             progress.progress(min(1.0, pct), text=f"Processed {done}/{total} files")
 
         with st.spinner("Indexing photos..."):
-            summary = indexer.index_folder(root, progress_callback=cb, force_reindex=force_reindex)
+            summary = indexer.index_folder(
+                root,
+                progress_callback=cb,
+                force_reindex=force_reindex,
+                prune_deleted=prune_deleted,
+            )
 
         progress.progress(1.0, text="Completed")
         status.success(
@@ -81,6 +87,7 @@ def run_indexing(
                     f"Decode failures: {summary.skipped_decode_failure}",
                     f"Unchanged: {summary.total_unchanged}",
                     f"Errors: {summary.total_errors}",
+                    f"Pruned: {summary.total_pruned}",
                 ]
             )
         )
@@ -124,7 +131,7 @@ def render_results(results: list[SearchResult], columns: int = 4) -> None:
 
 with st.sidebar:
     st.header("Settings")
-    db_path = st.text_input("DB Path", value="photo_index.db")
+    db_path = st.text_input("DB Path", value=default_db_path())
     model_name = st.text_input("Model", value="ViT-B-32")
     pretrained = st.text_input("Pretrained", value="laion2b_s34b_b79k")
     batch_size = st.number_input("Batch Size", min_value=1, max_value=256, value=32, step=1)
@@ -154,6 +161,7 @@ with actions_col:
             st.warning("Current folder path does not exist.")
 
 force_reindex = st.checkbox("Force reindex all files (backfill metadata)", value=False)
+prune_deleted = st.checkbox("Prune missing files from DB", value=False)
 if st.button("Index Folder", type="primary"):
     run_indexing(
         folder=st.session_state.get("index_folder", folder),
@@ -162,6 +170,7 @@ if st.button("Index Folder", type="primary"):
         pretrained=pretrained,
         batch_size=int(batch_size),
         force_reindex=force_reindex,
+        prune_deleted=prune_deleted,
     )
 
 st.subheader("Search")

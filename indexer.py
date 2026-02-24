@@ -31,6 +31,7 @@ class IndexSummary:
     skipped_decode_failure: int = 0
     total_errors: int = 0
     total_unchanged: int = 0
+    total_pruned: int = 0
 
 
 class CLIPEmbedder:
@@ -113,6 +114,7 @@ class PhotoIndexer:
         progress_callback: ProgressCallback | None = None,
         skip_log_path: str | Path | None = None,
         force_reindex: bool = False,
+        prune_deleted: bool = False,
     ) -> IndexSummary:
         """Index all images under ``root_path`` recursively.
 
@@ -125,9 +127,9 @@ class PhotoIndexer:
             raise ValueError(f"Invalid folder path: {root}")
 
         mtime_map = self.store.load_mtime_map()
-        files = list(iter_files_recursive(root))
+        total_files = sum(1 for _ in iter_files_recursive(root))
 
-        summary = IndexSummary(total_files_seen=len(files))
+        summary = IndexSummary(total_files_seen=total_files)
         batch_tensors: list[torch.Tensor] = []
         batch_meta: list[tuple[str, int, int, int, int | None, float | None, float | None]] = []
         skip_log_file = None
@@ -165,13 +167,13 @@ class PhotoIndexer:
             batch_tensors = []
             batch_meta = []
 
-        pbar = tqdm(total=len(files), desc="Indexing files", unit="file")
+        pbar = tqdm(total=total_files, desc="Indexing files", unit="file")
         last_commit_ts = time.time()
 
-        for idx, file_path in enumerate(files, start=1):
+        for idx, file_path in enumerate(iter_files_recursive(root), start=1):
             pbar.update(1)
             if progress_callback:
-                progress_callback(idx, len(files))
+                progress_callback(idx, total_files)
 
             if not is_supported_image(file_path):
                 summary.total_skipped += 1
@@ -218,6 +220,8 @@ class PhotoIndexer:
         pbar.close()
         if skip_log_file is not None:
             skip_log_file.close()
+        if prune_deleted:
+            summary.total_pruned = self._prune_deleted_under_root(root)
 
         self.store.upsert_stat("last_total_files_seen", summary.total_files_seen)
         self.store.upsert_stat("last_total_indexed", summary.total_indexed)
@@ -226,6 +230,19 @@ class PhotoIndexer:
         self.store.upsert_stat("last_skipped_decode_failure", summary.skipped_decode_failure)
         self.store.upsert_stat("last_total_errors", summary.total_errors)
         self.store.upsert_stat("last_total_unchanged", summary.total_unchanged)
+        self.store.upsert_stat("last_total_pruned", summary.total_pruned)
         self.store.commit()
 
         return summary
+
+    def _prune_deleted_under_root(self, root: Path) -> int:
+        """Delete DB records for files under root that no longer exist on disk."""
+        indexed_paths = self.store.load_paths_under_root(root)
+        to_delete: list[str] = []
+        for path_str in indexed_paths:
+            if not Path(path_str).exists():
+                to_delete.append(path_str)
+        deleted = self.store.delete_paths(to_delete)
+        if deleted:
+            self.store.commit()
+        return deleted
