@@ -10,7 +10,7 @@ import streamlit as st
 from indexer import CLIPEmbedder, PhotoIndexer
 from searcher import PhotoSearcher, SearchResult
 from store import PhotoStore
-from utils import load_thumbnail_array, open_in_finder
+from utils import choose_folder_dialog_macos, load_thumbnail_array, open_in_finder
 
 st.set_page_config(page_title="Local Photo Search", layout="wide")
 st.title("Local Private Photo Search")
@@ -130,11 +130,33 @@ with st.sidebar:
     batch_size = st.number_input("Batch Size", min_value=1, max_value=256, value=32, step=1)
 
 st.subheader("Index")
-folder = st.text_input("Photo Folder", placeholder="/Volumes/ExternalDrive/Photos")
+if "index_folder" not in st.session_state:
+    st.session_state["index_folder"] = ""
+if "pending_index_folder" in st.session_state:
+    st.session_state["index_folder"] = st.session_state.pop("pending_index_folder")
+
+folder_col, actions_col = st.columns([5, 2])
+with folder_col:
+    folder = st.text_input("Photo Folder", placeholder="/Volumes/ExternalDrive/Photos", key="index_folder")
+with actions_col:
+    st.write("")
+    st.write("")
+    if st.button("Browse Finder"):
+        selected = choose_folder_dialog_macos()
+        if selected:
+            st.session_state["pending_index_folder"] = selected
+            st.rerun()
+    if st.button("Open in Finder"):
+        current = Path(st.session_state.get("index_folder", "")).expanduser()
+        if current.exists():
+            open_in_finder(current)
+        else:
+            st.warning("Current folder path does not exist.")
+
 force_reindex = st.checkbox("Force reindex all files (backfill metadata)", value=False)
 if st.button("Index Folder", type="primary"):
     run_indexing(
-        folder=folder,
+        folder=st.session_state.get("index_folder", folder),
         db_path=db_path,
         model_name=model_name,
         pretrained=pretrained,

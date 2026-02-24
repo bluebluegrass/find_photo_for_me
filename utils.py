@@ -195,3 +195,28 @@ def open_in_finder(path: Path) -> bool:
     except Exception:
         logging.exception("Failed to open file in Finder: %s", path)
         return False
+
+
+def choose_folder_dialog_macos(prompt: str = "Select photo folder to index") -> str | None:
+    """Open native macOS folder picker and return selected folder path.
+
+    Returns:
+        Absolute POSIX path with trailing slash removed, or None if cancelled/failed.
+    """
+    script = [
+        "-e",
+        f'set chosenFolder to choose folder with prompt "{prompt}"',
+        "-e",
+        "POSIX path of chosenFolder",
+    ]
+    try:
+        completed = subprocess.run(["osascript", *script], check=False, capture_output=True, text=True)
+        if completed.returncode != 0:
+            return None
+        selected = completed.stdout.strip()
+        if not selected:
+            return None
+        return selected.rstrip("/")
+    except Exception:
+        logging.exception("Failed to open macOS folder picker.")
+        return None
