@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+.env
+.DS_Store
+photo_index.db
+*.db-shm
+*.db-wal
+.streamlit/
