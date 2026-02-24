@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime
 import logging
 import subprocess
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
 
 import numpy as np
 from PIL import Image
@@ -14,6 +16,17 @@ from pillow_heif import register_heif_opener
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 
 _HEIF_REGISTERED = False
+_GPS_TAG = 34853
+_GPS_INFO_TAG = "GPSInfo"
+
+
+@dataclass(slots=True)
+class ImageMetadata:
+    """Metadata extracted from image EXIF fields."""
+
+    taken_ts: int | None = None
+    latitude: float | None = None
+    longitude: float | None = None
 
 
 def configure_heif_support() -> None:
@@ -33,6 +46,10 @@ def iter_files_recursive(root: Path) -> Iterator[Path]:
 
 def is_supported_image(path: Path) -> bool:
     """Return True when path extension is one of supported image types."""
+    name = path.name
+    # macOS AppleDouble sidecar files (e.g. "._IMG_1234.JPG") are metadata, not real images.
+    if name.startswith("._"):
+        return False
     return path.suffix.lower() in SUPPORTED_EXTENSIONS
 
 
@@ -46,6 +63,114 @@ def load_image_rgb(path: Path) -> Image.Image:
     configure_heif_support()
     with Image.open(path) as img:
         return img.convert("RGB")
+
+
+def load_image_rgb_with_metadata(path: Path) -> tuple[Image.Image, ImageMetadata]:
+    """Load image, convert to RGB, and extract basic EXIF metadata."""
+    configure_heif_support()
+    with Image.open(path) as img:
+        metadata = extract_image_metadata(img)
+        rgb = img.convert("RGB")
+    return rgb, metadata
+
+
+def extract_image_metadata(image: Image.Image) -> ImageMetadata:
+    """Extract capture timestamp and GPS coordinates from EXIF if available."""
+    metadata = ImageMetadata()
+
+    exif_obj = None
+    try:
+        exif_obj = image.getexif()
+    except Exception:
+        return metadata
+    if exif_obj is None:
+        return metadata
+
+    # Taken time priority: DateTimeOriginal (36867), then DateTimeDigitized (36868), then DateTime (306).
+    for key in (36867, 36868, 306):
+        value = exif_obj.get(key)
+        ts = _parse_exif_datetime(value)
+        if ts is not None:
+            metadata.taken_ts = ts
+            break
+
+    gps_info = None
+    try:
+        gps_info = exif_obj.get_ifd(_GPS_TAG)
+    except Exception:
+        # Fallback for formats where GPS info is already embedded at the tag.
+        gps_info = exif_obj.get(_GPS_TAG) or exif_obj.get(_GPS_INFO_TAG)
+    lat, lon = _parse_gps(gps_info)
+    metadata.latitude = lat
+    metadata.longitude = lon
+    return metadata
+
+
+def _parse_exif_datetime(value: Any) -> int | None:
+    """Parse EXIF datetime string into Unix timestamp."""
+    if not value:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in ("%Y:%m:%d %H:%M:%S", "%Y-%m-%d %H:%M:%S"):
+        try:
+            return int(datetime.strptime(text, fmt).timestamp())
+        except ValueError:
+            continue
+    return None
+
+
+def _parse_gps(gps_info: Any) -> tuple[float | None, float | None]:
+    """Parse EXIF GPS data into decimal latitude/longitude."""
+    if gps_info is None:
+        return None, None
+
+    if not isinstance(gps_info, dict):
+        try:
+            gps_info = dict(gps_info)
+        except Exception:
+            return None, None
+
+    lat_ref = gps_info.get(1) or gps_info.get("GPSLatitudeRef")
+    lat_val = gps_info.get(2) or gps_info.get("GPSLatitude")
+    lon_ref = gps_info.get(3) or gps_info.get("GPSLongitudeRef")
+    lon_val = gps_info.get(4) or gps_info.get("GPSLongitude")
+
+    lat = _gps_to_decimal(lat_val, lat_ref)
+    lon = _gps_to_decimal(lon_val, lon_ref)
+    return lat, lon
+
+
+def _gps_to_decimal(value: Any, ref: Any) -> float | None:
+    """Convert EXIF DMS tuple to decimal coordinates."""
+    if value is None:
+        return None
+    try:
+        d, m, s = value
+        deg = _to_float(d)
+        minutes = _to_float(m)
+        seconds = _to_float(s)
+        dec = deg + (minutes / 60.0) + (seconds / 3600.0)
+        ref_text = ref.decode("utf-8", errors="ignore") if isinstance(ref, (bytes, bytearray)) else str(ref)
+        if ref and ref_text.upper() in {"S", "W"}:
+            dec = -dec
+        return float(dec)
+    except Exception:
+        return None
+
+
+def _to_float(x: Any) -> float:
+    """Convert EXIF rational/number-like value to float."""
+    try:
+        return float(x)
+    except Exception:
+        pass
+    try:
+        # PIL TiffImagePlugin.IFDRational may expose numerator/denominator.
+        return float(x.numerator) / float(x.denominator)
+    except Exception:
+        raise ValueError(f"Cannot convert EXIF numeric value to float: {x!r}")
 
 
 def load_thumbnail_array(path: Path, max_size: tuple[int, int] = (320, 320)) -> np.ndarray | None:

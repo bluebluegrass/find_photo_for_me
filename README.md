@@ -93,10 +93,22 @@ python app.py --device cpu search --query "cat"
 python app.py index --path "/Volumes/ExternalDrive/Photos"
 ```
 
+To backfill newly added metadata (taken time/GPS) for already indexed files:
+
+```bash
+python app.py index --path "/Volumes/ExternalDrive/Photos" --force
+```
+
 ### 2) Search from CLI
 
 ```bash
 python app.py search --query "cat" --topk 30
+```
+
+Filter by taken date and GPS availability:
+
+```bash
+python app.py search --query "trip" --from-date 2023-01-01 --to-date 2023-12-31 --has-gps
 ```
 
 ### 3) Open top result(s) in Finder
@@ -130,6 +142,8 @@ Options:
 
 - `--path` (required): root folder to scan recursively
 - `--batch-size` (default `32`): image embedding batch size
+- `--skip-log` (optional): write skip diagnostics TSV (`reason`, `path`, `detail`)
+- `--force` (optional): force re-index all supported files (ignore unchanged mtime)
 - global `--db` (default `photo_index.db`): SQLite file path
 - global `--model` (default `ViT-B-32`)
 - global `--pretrained` (default `laion2b_s34b_b79k`)
@@ -146,6 +160,11 @@ Options:
 
 - `--query` (required): text prompt
 - `--topk` (default `30`)
+- `--from-date` (optional): taken date lower bound (`YYYY-MM-DD`)
+- `--to-date` (optional): taken date upper bound (`YYYY-MM-DD`)
+- `--has-gps` (optional): only return results with GPS coordinates
+- `--min-score` (default `0.22`): suppress low-confidence matches
+- `--relative-to-best` (default `0.10`): keep only results close to best match score
 - `--open` (optional): open top result(s)
   - `--open` => open top 1
   - `--open 5` => open top 5
@@ -155,6 +174,12 @@ Output format:
 - rank
 - similarity score
 - absolute file path
+
+Relevance tuning example (stricter results):
+
+```bash
+python app.py search --query "cameras" --topk 50 --min-score 0.27 --relative-to-best 0.07
+```
 
 ## How Indexing Works
 
@@ -188,6 +213,9 @@ Table `photos`:
 - `mtime INTEGER NOT NULL`
 - `width INTEGER`
 - `height INTEGER`
+- `taken_ts INTEGER` (EXIF capture timestamp, unix seconds)
+- `latitude REAL` (EXIF GPS latitude)
+- `longitude REAL` (EXIF GPS longitude)
 - `embedding BLOB NOT NULL` (`float32` array bytes)
 - `updated_at INTEGER NOT NULL`
 
@@ -254,6 +282,30 @@ Table `stats`:
 - This is a local single-user tool.
 
 ## Troubleshooting
+
+### Many files were skipped (e.g. 1290)
+
+`Skipped` includes two categories:
+
+- non-image / unsupported extension
+- decode failure (corrupt/unsupported image payload, including some HEIC edge cases)
+
+Re-run indexing with skip diagnostics:
+
+```bash
+python app.py index --path "/Volumes/ExternalDrive/Photos" --skip-log skipped.tsv
+```
+
+Then inspect:
+
+- CLI summary breakdown (`Non-image`, `Decode failures`)
+- `skipped.tsv` for exact file paths and reasons
+
+Quick counts by reason:
+
+```bash
+cut -f1 skipped.tsv | sort | uniq -c
+```
 
 ### `ModuleNotFoundError: No module named 'open_clip'`
 
