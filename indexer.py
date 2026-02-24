@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import hashlib
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,7 +16,13 @@ from PIL import Image
 from tqdm import tqdm
 
 from store import PhotoRecord, PhotoStore
-from utils import is_supported_image, iter_files_recursive, load_image_rgb_with_metadata
+from utils import (
+    extract_video_frames_ffmpeg,
+    is_supported_image,
+    is_supported_video,
+    iter_files_recursive,
+    load_image_rgb_with_metadata,
+)
 
 LOGGER = logging.getLogger(__name__)
 
@@ -115,6 +122,9 @@ class PhotoIndexer:
         skip_log_path: str | Path | None = None,
         force_reindex: bool = False,
         prune_deleted: bool = False,
+        video_interval_sec: float = 1.5,
+        video_max_frames: int = 300,
+        video_frame_cache_dir: str | Path = ".video_frame_cache",
     ) -> IndexSummary:
         """Index all images under ``root_path`` recursively.
 
@@ -127,7 +137,9 @@ class PhotoIndexer:
             raise ValueError(f"Invalid folder path: {root}")
 
         mtime_map = self.store.load_mtime_map()
+        video_mtime_map = self.store.load_source_mtime_map("video_frame")
         total_files = sum(1 for _ in iter_files_recursive(root))
+        frame_cache_root = Path(video_frame_cache_dir).expanduser().resolve()
 
         summary = IndexSummary(total_files_seen=total_files)
         batch_tensors: list[torch.Tensor] = []
@@ -159,6 +171,9 @@ class PhotoIndexer:
                     taken_ts=taken_ts,
                     latitude=latitude,
                     longitude=longitude,
+                    media_type="image",
+                    source_path=file_path,
+                    frame_ts=None,
                     embedding=embs[i],
                 )
                 self.store.upsert_photo(record)
@@ -176,10 +191,11 @@ class PhotoIndexer:
                 progress_callback(idx, total_files)
 
             if not is_supported_image(file_path):
-                summary.total_skipped += 1
-                summary.skipped_non_image += 1
-                log_skip("non_image_or_unsupported_extension", file_path)
-                continue
+                if not is_supported_video(file_path):
+                    summary.total_skipped += 1
+                    summary.skipped_non_image += 1
+                    log_skip("non_image_or_unsupported_extension", file_path)
+                    continue
 
             try:
                 path_str = str(file_path.resolve())
@@ -188,6 +204,27 @@ class PhotoIndexer:
                 LOGGER.exception("Failed to stat file: %s", file_path)
                 summary.total_errors += 1
                 log_skip("stat_error", file_path)
+                continue
+
+            if is_supported_video(file_path):
+                prev_video_mtime = video_mtime_map.get(path_str)
+                if (not force_reindex) and prev_video_mtime is not None and prev_video_mtime == mtime:
+                    summary.total_unchanged += 1
+                    continue
+                try:
+                    indexed_frames = self._index_video_file(
+                        video_path=file_path,
+                        video_mtime=mtime,
+                        frame_cache_root=frame_cache_root,
+                        interval_sec=video_interval_sec,
+                        max_frames=video_max_frames,
+                    )
+                    summary.total_indexed += indexed_frames
+                except Exception as exc:
+                    LOGGER.warning("Skipping video indexing failure: %s", file_path, exc_info=True)
+                    summary.total_skipped += 1
+                    summary.skipped_decode_failure += 1
+                    log_skip("video_decode_or_extract_failure", file_path, detail=str(exc))
                 continue
 
             prev_mtime = mtime_map.get(path_str)
@@ -237,12 +274,96 @@ class PhotoIndexer:
 
     def _prune_deleted_under_root(self, root: Path) -> int:
         """Delete DB records for files under root that no longer exist on disk."""
-        indexed_paths = self.store.load_paths_under_root(root)
+        entries = self.store.load_entries_under_root(root)
         to_delete: list[str] = []
-        for path_str in indexed_paths:
-            if not Path(path_str).exists():
-                to_delete.append(path_str)
+        for file_path, source_path, media_type in entries:
+            source_exists = Path(source_path).exists()
+            if media_type == "video_frame":
+                if not source_exists:
+                    if Path(file_path).exists():
+                        try:
+                            Path(file_path).unlink()
+                        except Exception:
+                            LOGGER.debug("Failed to remove cached frame during prune: %s", file_path, exc_info=True)
+                    to_delete.append(file_path)
+            else:
+                if not source_exists:
+                    to_delete.append(file_path)
         deleted = self.store.delete_paths(to_delete)
         if deleted:
             self.store.commit()
         return deleted
+
+    def _index_video_file(
+        self,
+        video_path: Path,
+        video_mtime: int,
+        frame_cache_root: Path,
+        interval_sec: float,
+        max_frames: int,
+    ) -> int:
+        """Extract and index sampled frames for one video file."""
+        source_path = str(video_path.resolve())
+
+        # Remove old indexed frames for this video source.
+        old_paths = self.store.load_paths_by_source(source_path=source_path, media_type="video_frame")
+        for old in old_paths:
+            old_path = Path(old)
+            if old_path.exists():
+                try:
+                    old_path.unlink()
+                except Exception:
+                    LOGGER.debug("Failed to remove stale cached frame: %s", old_path, exc_info=True)
+        if old_paths:
+            self.store.delete_paths(old_paths)
+            self.store.commit()
+
+        cache_key = hashlib.sha1(f"{source_path}|{video_mtime}|{interval_sec}|{max_frames}".encode("utf-8")).hexdigest()[:16]
+        frame_dir = frame_cache_root / cache_key
+        frames = extract_video_frames_ffmpeg(
+            video_path=video_path,
+            output_dir=frame_dir,
+            interval_sec=interval_sec,
+            max_frames=max_frames,
+        )
+        if not frames:
+            return 0
+
+        batch_tensors: list[torch.Tensor] = []
+        batch_meta: list[tuple[str, int, int, int, float]] = []
+        indexed = 0
+
+        def flush_frames() -> None:
+            nonlocal batch_tensors, batch_meta, indexed
+            if not batch_tensors:
+                return
+            embs = self.embedder.encode_image_tensors(batch_tensors)
+            for i, (frame_path_str, width, height, mtime, frame_ts) in enumerate(batch_meta):
+                rec = PhotoRecord(
+                    file_path=frame_path_str,
+                    mtime=mtime,
+                    width=width,
+                    height=height,
+                    taken_ts=None,
+                    latitude=None,
+                    longitude=None,
+                    media_type="video_frame",
+                    source_path=source_path,
+                    frame_ts=frame_ts,
+                    embedding=embs[i],
+                )
+                self.store.upsert_photo(rec)
+            self.store.commit()
+            indexed += len(batch_meta)
+            batch_tensors = []
+            batch_meta = []
+
+        for frame_path, frame_ts in frames:
+            image, _ = load_image_rgb_with_metadata(frame_path)
+            width, height = image.size
+            batch_tensors.append(self.embedder.preprocess_image(image))
+            batch_meta.append((str(frame_path), width, height, video_mtime, frame_ts))
+            if len(batch_tensors) >= self.batch_size:
+                flush_frames()
+        flush_frames()
+        return indexed

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any, Iterator
@@ -14,6 +15,7 @@ from PIL import Image
 from pillow_heif import register_heif_opener
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
+SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
 DEFAULT_APP_DB_PATH = Path.home() / "Library" / "Application Support" / "FindPhotoForMe" / "photo_index.db"
 
 _HEIF_REGISTERED = False
@@ -52,6 +54,14 @@ def is_supported_image(path: Path) -> bool:
     if name.startswith("._"):
         return False
     return path.suffix.lower() in SUPPORTED_EXTENSIONS
+
+
+def is_supported_video(path: Path) -> bool:
+    """Return True when path extension is one of supported video types."""
+    name = path.name
+    if name.startswith("._"):
+        return False
+    return path.suffix.lower() in SUPPORTED_VIDEO_EXTENSIONS
 
 
 def load_image_rgb(path: Path) -> Image.Image:
@@ -226,3 +236,51 @@ def choose_folder_dialog_macos(prompt: str = "Select photo folder to index") -> 
 def default_db_path() -> str:
     """Return recommended persistent DB path for macOS app data."""
     return str(DEFAULT_APP_DB_PATH)
+
+
+def ffmpeg_available() -> bool:
+    """Return True when ffmpeg binary is available in PATH."""
+    return shutil.which("ffmpeg") is not None
+
+
+def extract_video_frames_ffmpeg(
+    video_path: Path,
+    output_dir: Path,
+    interval_sec: float = 1.0,
+    max_frames: int = 300,
+) -> list[tuple[Path, float]]:
+    """Extract sampled video frames to JPEG files and return (frame_path, timestamp_sec)."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    if not ffmpeg_available():
+        raise RuntimeError("ffmpeg not found. Install ffmpeg to index videos.")
+    if interval_sec <= 0:
+        raise ValueError("interval_sec must be > 0")
+
+    output_pattern = output_dir / "frame_%06d.jpg"
+    fps_expr = f"fps=1/{interval_sec}"
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-nostdin",
+        "-i",
+        str(video_path),
+        "-vf",
+        fps_expr,
+        "-q:v",
+        "2",
+        "-frames:v",
+        str(max_frames),
+        str(output_pattern),
+    ]
+    completed = subprocess.run(cmd, check=False, capture_output=True, text=True)
+    if completed.returncode != 0:
+        raise RuntimeError((completed.stderr or completed.stdout or "ffmpeg frame extraction failed").strip())
+
+    frames = sorted(output_dir.glob("frame_*.jpg"))
+    out: list[tuple[Path, float]] = []
+    for idx, frame_path in enumerate(frames):
+        ts = float(idx) * interval_sec
+        out.append((frame_path.resolve(), ts))
+    return out

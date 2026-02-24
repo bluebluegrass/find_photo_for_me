@@ -50,6 +50,9 @@ def run_indexing(
     batch_size: int,
     force_reindex: bool = False,
     prune_deleted: bool = False,
+    video_interval_sec: float = 1.5,
+    video_max_frames: int = 300,
+    video_cache_dir: str = ".video_frame_cache",
 ) -> None:
     """Execute indexing and update Streamlit widgets."""
     root = Path(folder).expanduser().resolve()
@@ -75,6 +78,9 @@ def run_indexing(
                 progress_callback=cb,
                 force_reindex=force_reindex,
                 prune_deleted=prune_deleted,
+                video_interval_sec=video_interval_sec,
+                video_max_frames=video_max_frames,
+                video_frame_cache_dir=video_cache_dir,
             )
 
         progress.progress(1.0, text="Completed")
@@ -124,6 +130,40 @@ def delete_photo_and_index(file_path: str, db_path: str) -> tuple[bool, str]:
     return True, "Deleted file and removed from index."
 
 
+def delete_media_result(item: SearchResult, db_path: str) -> tuple[bool, str]:
+    """Delete media source and associated index rows."""
+    if item.media_type == "video_frame":
+        source = Path(item.source_path)
+        try:
+            if source.exists():
+                source.unlink()
+        except Exception as exc:
+            return False, f"Failed to delete video file: {exc}"
+
+        try:
+            store = PhotoStore(db_path)
+            frame_paths = store.load_paths_by_source(item.source_path, "video_frame")
+            for p in frame_paths:
+                pp = Path(p)
+                if pp.exists():
+                    try:
+                        pp.unlink()
+                    except Exception:
+                        pass
+            if frame_paths:
+                store.delete_paths(frame_paths)
+                store.commit()
+            store.close()
+        except Exception as exc:
+            return False, f"Video deleted, but DB cleanup failed: {exc}"
+
+        st.session_state.pop("searcher", None)
+        st.session_state.pop("searcher_key", None)
+        return True, "Deleted video and removed indexed frames."
+
+    return delete_photo_and_index(item.file_path, db_path)
+
+
 def render_results(results: list[SearchResult], db_path: str, columns: int = 4) -> None:
     """Render search results in thumbnail grid."""
     if not results:
@@ -146,18 +186,23 @@ def render_results(results: list[SearchResult], db_path: str, columns: int = 4) 
                 st.caption(f"Taken: {datetime.fromtimestamp(item.taken_ts).strftime('%Y-%m-%d %H:%M:%S')}")
             if item.latitude is not None and item.longitude is not None:
                 st.caption(f"GPS: {item.latitude:.6f}, {item.longitude:.6f}")
+            if item.media_type == "video_frame":
+                ts_text = f"{item.frame_ts:.1f}s" if item.frame_ts is not None else "-"
+                st.caption(f"Video frame @ {ts_text}")
+                st.caption(f"Source: {Path(item.source_path).name}")
             st.caption(path.name)
             st.code(str(path), language=None)
             action_cols = st.columns(2)
             with action_cols[0]:
                 if st.button("Open", key=f"open_{idx}_{item.file_path}"):
-                    ok = open_in_finder(path)
+                    open_target = Path(item.source_path) if item.media_type == "video_frame" else path
+                    ok = open_in_finder(open_target)
                     if not ok:
-                        st.error(f"Failed to open: {path}")
+                        st.error(f"Failed to open: {open_target}")
             with action_cols[1]:
                 if st.session_state.get("delete_mode", False):
                     if st.button("Delete", key=f"delete_{idx}_{item.file_path}", type="secondary"):
-                        ok, msg = delete_photo_and_index(item.file_path, db_path)
+                        ok, msg = delete_media_result(item, db_path)
                         if ok:
                             st.success(msg)
                             st.session_state["results"] = [
@@ -174,6 +219,9 @@ with st.sidebar:
     model_name = st.text_input("Model", value="ViT-B-32")
     pretrained = st.text_input("Pretrained", value="laion2b_s34b_b79k")
     batch_size = st.number_input("Batch Size", min_value=1, max_value=256, value=32, step=1)
+    video_interval_sec = st.number_input("Video frame interval (sec)", min_value=0.1, max_value=30.0, value=1.5, step=0.1)
+    video_max_frames = st.number_input("Video max frames", min_value=1, max_value=5000, value=300, step=10)
+    video_cache_dir = st.text_input("Video frame cache dir", value=".video_frame_cache")
 
 st.subheader("Index")
 if "index_folder" not in st.session_state:
@@ -210,6 +258,9 @@ if st.button("Index Folder", type="primary"):
         batch_size=int(batch_size),
         force_reindex=force_reindex,
         prune_deleted=prune_deleted,
+        video_interval_sec=float(video_interval_sec),
+        video_max_frames=int(video_max_frames),
+        video_cache_dir=video_cache_dir,
     )
 
 st.subheader("Search")

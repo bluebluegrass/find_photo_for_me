@@ -19,6 +19,7 @@ Traditional folder search depends on filenames and metadata. This tool uses **vi
 - Fully local and offline
 - Supports Apple Silicon (MPS acceleration when available)
 - HEIC/HEIF support via `pillow-heif`
+- Video search via sampled CLIP frame embeddings (ffmpeg)
 - Incremental indexing (mtime-based)
 - Fast search using in-memory NumPy matrix + dot-product similarity
 - SQLite-backed index (persistent app-data DB by default)
@@ -34,10 +35,19 @@ Traditional folder search depends on filenames and metadata. This tool uses **vi
 - `.heic`
 - `.heif`
 
+Video:
+
+- `.mp4`
+- `.mov`
+- `.m4v`
+- `.avi`
+- `.mkv`
+
 ## System Requirements
 
 - macOS
 - Python 3.11+
+- `ffmpeg` (required for video indexing)
 - Sufficient RAM to hold embeddings matrix (for ~20k images this is typically manageable)
 - Sufficient storage for SQLite DB
 
@@ -51,6 +61,12 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
+```
+
+Install ffmpeg (Homebrew):
+
+```bash
+brew install ffmpeg
 ```
 
 ### Important: Use One Interpreter Consistently
@@ -145,6 +161,9 @@ Options:
 - `--skip-log` (optional): write skip diagnostics TSV (`reason`, `path`, `detail`)
 - `--force` (optional): force re-index all supported files (ignore unchanged mtime)
 - `--prune` (optional): remove DB rows for files under `--path` that no longer exist on disk
+- `--video-interval-sec` (default `1.5`): frame sampling interval for videos
+- `--video-max-frames` (default `300`): cap extracted frames per video
+- `--video-cache-dir` (default `.video_frame_cache`): location for cached extracted frame JPEGs
 - global `--db` (default `~/Library/Application Support/FindPhotoForMe/photo_index.db`): SQLite file path
 - global `--model` (default `ViT-B-32`)
 - global `--pretrained` (default `laion2b_s34b_b79k`)
@@ -205,6 +224,12 @@ Relevance tuning example (stricter results):
 ```bash
 python app.py search --query "cameras" --topk 50 --min-score 0.27 --relative-to-best 0.07
 ```
+
+Video results:
+
+- appear as `video_frame` matches
+- include `video_ts=<seconds>` and `source=<video path>` in CLI output
+- `--open` opens the original video file
 
 ## How Indexing Works
 

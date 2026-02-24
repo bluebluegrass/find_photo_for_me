@@ -20,6 +20,9 @@ class SearchResult:
     taken_ts: int | None
     latitude: float | None
     longitude: float | None
+    media_type: str
+    source_path: str
+    frame_ts: float | None
 
 
 class PhotoSearcher:
@@ -32,10 +35,22 @@ class PhotoSearcher:
         self.taken_ts = np.empty((0,), dtype=np.float64)
         self.latitude = np.empty((0,), dtype=np.float64)
         self.longitude = np.empty((0,), dtype=np.float64)
+        self.media_types: list[str] = []
+        self.source_paths: list[str] = []
+        self.frame_ts = np.empty((0,), dtype=np.float64)
 
     def load_index(self) -> None:
         """Load all stored embeddings into memory."""
-        self.paths, self.matrix, self.taken_ts, self.latitude, self.longitude = self.store.load_embeddings_matrix()
+        (
+            self.paths,
+            self.matrix,
+            self.taken_ts,
+            self.latitude,
+            self.longitude,
+            self.media_types,
+            self.source_paths,
+            self.frame_ts,
+        ) = self.store.load_embeddings_matrix()
 
     def search(
         self,
@@ -93,6 +108,7 @@ class PhotoSearcher:
             taken_val = self.taken_ts[int(row_idx)]
             lat_val = self.latitude[int(row_idx)]
             lon_val = self.longitude[int(row_idx)]
+            frame_val = self.frame_ts[int(row_idx)]
             results.append(
                 SearchResult(
                     rank=rank,
@@ -101,6 +117,9 @@ class PhotoSearcher:
                     taken_ts=int(taken_val) if np.isfinite(taken_val) else None,
                     latitude=float(lat_val) if np.isfinite(lat_val) else None,
                     longitude=float(lon_val) if np.isfinite(lon_val) else None,
+                    media_type=self.media_types[int(row_idx)] if self.media_types else "image",
+                    source_path=self.source_paths[int(row_idx)] if self.source_paths else self.paths[int(row_idx)],
+                    frame_ts=float(frame_val) if np.isfinite(frame_val) else None,
                 )
             )
         return results

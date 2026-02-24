@@ -53,9 +53,14 @@ def render_results(results: list[SearchResult], columns: int = 4) -> None:
                 st.caption(f"Taken: {datetime.fromtimestamp(item.taken_ts).strftime('%Y-%m-%d %H:%M:%S')}")
             if item.latitude is not None and item.longitude is not None:
                 st.caption(f"GPS: {item.latitude:.6f}, {item.longitude:.6f}")
+            if item.media_type == "video_frame":
+                ts_text = f"{item.frame_ts:.1f}s" if item.frame_ts is not None else "-"
+                st.caption(f"Video frame @ {ts_text}")
+                st.caption(f"Source: {Path(item.source_path).name}")
             st.caption(path.name)
             if st.button("Open", key=f"open_{i}_{item.file_path}"):
-                open_in_finder(path)
+                open_target = Path(item.source_path) if item.media_type == "video_frame" else path
+                open_in_finder(open_target)
 
 
 query = st.text_input("Query", placeholder="cat")

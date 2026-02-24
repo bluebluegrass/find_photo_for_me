@@ -38,6 +38,9 @@ def cmd_index(args: argparse.Namespace) -> int:
             skip_log_path=args.skip_log,
             force_reindex=args.force,
             prune_deleted=args.prune,
+            video_interval_sec=args.video_interval_sec,
+            video_max_frames=args.video_max_frames,
+            video_frame_cache_dir=args.video_cache_dir,
         )
 
         print(f"Indexed:   {summary.total_indexed}")
@@ -99,12 +102,17 @@ def cmd_search(args: argparse.Namespace) -> int:
             gps_text = "-"
             if res.latitude is not None and res.longitude is not None:
                 gps_text = f"{res.latitude:.6f},{res.longitude:.6f}"
-            print(f"{res.rank:>3}  {res.score:>8.4f}  {taken_text:>19}  {gps_text:>23}  {res.file_path}")
+            extra = ""
+            if res.media_type == "video_frame":
+                ts_text = f"{res.frame_ts:.1f}s" if res.frame_ts is not None else "-"
+                extra = f"  video_ts={ts_text}  source={res.source_path}"
+            print(f"{res.rank:>3}  {res.score:>8.4f}  {taken_text:>19}  {gps_text:>23}  {res.file_path}{extra}")
 
         if args.open is not None:
             open_count = min(args.open, len(results))
             for item in results[:open_count]:
-                open_in_finder(Path(item.file_path))
+                open_target = item.source_path if item.media_type == "video_frame" else item.file_path
+                open_in_finder(Path(open_target))
 
         return 0
     finally:
@@ -147,6 +155,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--prune",
         action="store_true",
         help="Delete DB rows for files under --path that no longer exist on disk",
+    )
+    p_index.add_argument(
+        "--video-interval-sec",
+        type=float,
+        default=1.5,
+        help="Sampling interval in seconds for video frame extraction",
+    )
+    p_index.add_argument(
+        "--video-max-frames",
+        type=int,
+        default=300,
+        help="Maximum extracted frames per video during indexing",
+    )
+    p_index.add_argument(
+        "--video-cache-dir",
+        default=".video_frame_cache",
+        help="Directory where extracted video frame images are cached",
     )
     p_index.set_defaults(func=cmd_index)
 
