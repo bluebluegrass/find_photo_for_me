@@ -99,7 +99,32 @@ def run_indexing(
         store.close()
 
 
-def render_results(results: list[SearchResult], columns: int = 4) -> None:
+def delete_photo_and_index(file_path: str, db_path: str) -> tuple[bool, str]:
+    """Delete photo file and corresponding DB row."""
+    path = Path(file_path)
+    try:
+        if path.exists():
+            path.unlink()
+    except Exception as exc:
+        return False, f"Failed to delete file: {exc}"
+
+    try:
+        store = PhotoStore(db_path)
+        deleted = store.delete_paths([str(path.resolve())])
+        store.commit()
+        store.close()
+        if deleted == 0:
+            return False, "File deleted, but no DB row was removed."
+    except Exception as exc:
+        return False, f"File deleted, but DB update failed: {exc}"
+
+    # Refresh cached search matrix after destructive DB update.
+    st.session_state.pop("searcher", None)
+    st.session_state.pop("searcher_key", None)
+    return True, "Deleted file and removed from index."
+
+
+def render_results(results: list[SearchResult], db_path: str, columns: int = 4) -> None:
     """Render search results in thumbnail grid."""
     if not results:
         st.info("No results found.")
@@ -123,10 +148,24 @@ def render_results(results: list[SearchResult], columns: int = 4) -> None:
                 st.caption(f"GPS: {item.latitude:.6f}, {item.longitude:.6f}")
             st.caption(path.name)
             st.code(str(path), language=None)
-            if st.button("Open", key=f"open_{idx}_{item.file_path}"):
-                ok = open_in_finder(path)
-                if not ok:
-                    st.error(f"Failed to open: {path}")
+            action_cols = st.columns(2)
+            with action_cols[0]:
+                if st.button("Open", key=f"open_{idx}_{item.file_path}"):
+                    ok = open_in_finder(path)
+                    if not ok:
+                        st.error(f"Failed to open: {path}")
+            with action_cols[1]:
+                if st.session_state.get("delete_mode", False):
+                    if st.button("Delete", key=f"delete_{idx}_{item.file_path}", type="secondary"):
+                        ok, msg = delete_photo_and_index(item.file_path, db_path)
+                        if ok:
+                            st.success(msg)
+                            st.session_state["results"] = [
+                                r for r in st.session_state.get("results", []) if r.file_path != item.file_path
+                            ]
+                            st.rerun()
+                        else:
+                            st.error(msg)
 
 
 with st.sidebar:
@@ -188,6 +227,7 @@ with col4:
     min_score = st.slider("Min similarity score", min_value=0.0, max_value=1.0, value=0.22, step=0.01)
 with col5:
     relative_to_best = st.slider("Max gap from best score", min_value=0.0, max_value=0.5, value=0.10, step=0.01)
+delete_mode = st.checkbox("Enable delete buttons (permanent)", value=False, key="delete_mode")
 
 if st.button("Search"):
     if not query.strip():
@@ -223,4 +263,4 @@ if st.button("Search"):
         )
         st.session_state["results"] = results
 
-render_results(st.session_state.get("results", []))
+render_results(st.session_state.get("results", []), db_path=db_path)
