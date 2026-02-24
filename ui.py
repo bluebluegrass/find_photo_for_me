@@ -12,8 +12,8 @@ from searcher import PhotoSearcher, SearchResult
 from store import PhotoStore
 from utils import choose_folder_dialog_macos, default_db_path, load_thumbnail_array, open_in_finder
 
-st.set_page_config(page_title="Local Photo Search", layout="wide")
-st.title("Local Private Photo Search")
+st.set_page_config(page_title="LocalPix", layout="wide")
+st.title("LocalPix")
 st.caption("OpenCLIP + SQLite | Offline | HEIC compatible")
 
 

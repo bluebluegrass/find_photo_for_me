@@ -16,7 +16,7 @@ from pillow_heif import register_heif_opener
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
-DEFAULT_APP_DB_PATH = Path.home() / "Library" / "Application Support" / "FindPhotoForMe" / "photo_index.db"
+DEFAULT_APP_DB_PATH = Path.home() / "Library" / "Application Support" / "LocalPix" / "photo_index.db"
 
 _HEIF_REGISTERED = False
 _GPS_TAG = 34853

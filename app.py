@@ -121,7 +121,7 @@ def cmd_search(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     """Build root argparse parser."""
-    parser = argparse.ArgumentParser(description="Local private photo search using OpenCLIP embeddings")
+    parser = argparse.ArgumentParser(description="LocalPix: local private photo/video search using OpenCLIP embeddings")
     parser.add_argument("--db", default=default_db_path(), help="Path to SQLite database file")
     parser.add_argument("--model", default="ViT-B-32", help="OpenCLIP model name")
     parser.add_argument(

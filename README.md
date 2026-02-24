@@ -1,4 +1,4 @@
-# Local Private Photo Search (OpenCLIP + SQLite)
+# LocalPix (OpenCLIP + SQLite)
 
 A fully offline photo search tool for macOS that indexes your image files with CLIP embeddings, then lets you search using natural language queries like:
 
@@ -164,7 +164,7 @@ Options:
 - `--video-interval-sec` (default `1.5`): frame sampling interval for videos
 - `--video-max-frames` (default `300`): cap extracted frames per video
 - `--video-cache-dir` (default `.video_frame_cache`): location for cached extracted frame JPEGs
-- global `--db` (default `~/Library/Application Support/FindPhotoForMe/photo_index.db`): SQLite file path
+- global `--db` (default `~/Library/Application Support/LocalPix/photo_index.db`): SQLite file path
 - global `--model` (default `ViT-B-32`)
 - global `--pretrained` (default `laion2b_s34b_b79k`)
 - global `--device` (optional: `mps`, `cpu`)
@@ -174,7 +174,7 @@ Options:
 
 Recommended for end users: keep one persistent DB file in macOS app-data location:
 
-- `~/Library/Application Support/FindPhotoForMe/photo_index.db`
+- `~/Library/Application Support/LocalPix/photo_index.db`
 
 Why:
 
@@ -187,9 +187,9 @@ One DB can hold multiple photo roots because records are keyed by absolute `file
 Example:
 
 ```bash
-python app.py --db "~/Library/Application Support/FindPhotoForMe/photo_index.db" index --path "/Volumes/ExternalDrive/Photos"
-python app.py --db "~/Library/Application Support/FindPhotoForMe/photo_index.db" index --path "/Volumes/AnotherDrive/Archive"
-python app.py --db "~/Library/Application Support/FindPhotoForMe/photo_index.db" search --query "cat"
+python app.py --db "~/Library/Application Support/LocalPix/photo_index.db" index --path "/Volumes/ExternalDrive/Photos"
+python app.py --db "~/Library/Application Support/LocalPix/photo_index.db" index --path "/Volumes/AnotherDrive/Archive"
+python app.py --db "~/Library/Application Support/LocalPix/photo_index.db" search --query "cat"
 ```
 
 If you prefer isolation, you can use separate DB files per root folder by passing different `--db` paths.
@@ -255,7 +255,7 @@ HEIC/HEIF decode failures are skipped gracefully and logged.
 
 ## Database Schema
 
-SQLite DB: user-configurable path (default: `~/Library/Application Support/FindPhotoForMe/photo_index.db`)
+SQLite DB: user-configurable path (default: `~/Library/Application Support/LocalPix/photo_index.db`)
 
 Table `photos`:
 

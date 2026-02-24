@@ -12,8 +12,8 @@ from searcher import PhotoSearcher, SearchResult
 from store import PhotoStore
 from utils import default_db_path, load_thumbnail_array, open_in_finder
 
-st.set_page_config(page_title="Photo Search", layout="wide")
-st.title("Photo Search")
+st.set_page_config(page_title="LocalPix", layout="wide")
+st.title("LocalPix")
 
 DB_PATH = default_db_path()
 
