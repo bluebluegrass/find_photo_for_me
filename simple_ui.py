@@ -72,6 +72,7 @@ with col2:
     to_date = st.text_input("To date (YYYY-MM-DD)", value="")
 with col3:
     has_gps = st.checkbox("Only with GPS", value=False)
+media_option = st.selectbox("Media type", options=["Photo", "Video", "Both"], index=0)
 col4, col5 = st.columns(2)
 with col4:
     min_score = st.slider("Min similarity score", min_value=0.0, max_value=1.0, value=0.22, step=0.01)
@@ -102,6 +103,7 @@ if st.button("Search", type="primary"):
         with st.spinner("Searching..."):
             searcher = get_searcher(DB_PATH)
             embedder = get_embedder()
+            media_filter = {"Photo": "photo", "Video": "video", "Both": "both"}[media_option]
             results = searcher.search(
                 query=query.strip(),
                 topk=topk,
@@ -111,6 +113,7 @@ if st.button("Search", type="primary"):
                 has_gps=has_gps,
                 min_score=float(min_score),
                 relative_to_best=float(relative_to_best),
+                media_filter=media_filter,
             )
             st.session_state["results"] = results
 

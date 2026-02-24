@@ -62,6 +62,7 @@ class PhotoSearcher:
         has_gps: bool = False,
         min_score: float | None = None,
         relative_to_best: float | None = None,
+        media_filter: str = "photo",
     ) -> list[SearchResult]:
         """Return top-K results for a text query."""
         if self.matrix.size == 0 or not self.paths:
@@ -76,6 +77,14 @@ class PhotoSearcher:
             mask &= np.isfinite(self.taken_ts) & (self.taken_ts <= float(max_taken_ts))
         if has_gps:
             mask &= np.isfinite(self.latitude) & np.isfinite(self.longitude)
+        if media_filter == "photo":
+            mask &= np.array([m != "video_frame" for m in self.media_types], dtype=bool)
+        elif media_filter == "video":
+            mask &= np.array([m == "video_frame" for m in self.media_types], dtype=bool)
+        elif media_filter == "both":
+            pass
+        else:
+            raise ValueError(f"Unsupported media_filter: {media_filter}")
 
         valid_idx = np.where(mask)[0]
         if valid_idx.size == 0:
