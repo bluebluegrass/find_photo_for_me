@@ -20,6 +20,7 @@ Traditional folder search depends on filenames and metadata. This tool uses **vi
 - Supports Apple Silicon (MPS acceleration when available)
 - HEIC/HEIF support via `pillow-heif`
 - Video search via sampled CLIP frame embeddings (ffmpeg)
+- Optional local LLM smart-query parser (offline/local runtime)
 - Incremental indexing (mtime-based)
 - Fast search using in-memory NumPy matrix + dot-product similarity
 - SQLite-backed index (persistent app-data DB by default)
@@ -48,6 +49,7 @@ Video:
 - macOS
 - Python 3.11+
 - `ffmpeg` (required for video indexing)
+- Local LLM runtime for Smart Query (optional, e.g. Ollama)
 - Sufficient RAM to hold embeddings matrix (for ~20k images this is typically manageable)
 - Sufficient storage for SQLite DB
 
@@ -67,6 +69,14 @@ Install ffmpeg (Homebrew):
 
 ```bash
 brew install ffmpeg
+```
+
+Install local LLM runtime (optional for Smart Query):
+
+```bash
+brew install ollama
+ollama pull qwen2.5:3b-instruct
+ollama serve
 ```
 
 ### Important: Use One Interpreter Consistently
@@ -119,6 +129,12 @@ python app.py index --path "/Volumes/ExternalDrive/Photos" --force
 
 ```bash
 python app.py search --query "cat" --topk 30
+```
+
+Smart Query (local LLM parse + prompt expansion):
+
+```bash
+python app.py search --query "black cat in turkey" --smart-query --show-parse --media-filter both
 ```
 
 Filter by taken date and GPS availability:
@@ -207,6 +223,12 @@ Options:
 - `--from-date` (optional): taken date lower bound (`YYYY-MM-DD`)
 - `--to-date` (optional): taken date upper bound (`YYYY-MM-DD`)
 - `--has-gps` (optional): only return results with GPS coordinates
+- `--media-filter` (default `photo`): `photo`, `video`, or `both`
+- `--smart-query` (optional): use local LLM query parser/expansion
+- `--show-parse` (optional): print parsed smart-query details
+- `--llm-model` (default from env or `qwen2.5:3b-instruct`)
+- `--llm-timeout` (default from env or `2.0`)
+- `--llm-endpoint` (default from env or `http://127.0.0.1:11434/api/generate`)
 - `--min-score` (default `0.22`): suppress low-confidence matches
 - `--relative-to-best` (default `0.10`): keep only results close to best match score
 - `--open` (optional): open top result(s)
@@ -230,6 +252,25 @@ Video results:
 - appear as `video_frame` matches
 - include `video_ts=<seconds>` and `source=<video path>` in CLI output
 - `--open` opens the original video file
+
+## Smart Query (Local LLM)
+
+Smart Query parses natural language into structured intent and expanded prompts. Example:
+
+- input: `black cat in turkey`
+- parsed intent: visual query `black cat`, location hint `turkey`, expanded prompts for retrieval
+
+Smart Query is local/offline when your model runtime is local.
+
+Environment overrides:
+
+```bash
+export LOCALPIX_LLM_MODEL="qwen2.5:3b-instruct"
+export LOCALPIX_LLM_TIMEOUT="2.0"
+export LOCALPIX_LLM_ENDPOINT="http://127.0.0.1:11434/api/generate"
+```
+
+If the LLM runtime is unavailable, LocalPix automatically falls back to baseline parsing and search.
 
 ## How Indexing Works
 
