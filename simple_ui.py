@@ -8,6 +8,7 @@ from pathlib import Path
 import streamlit as st
 
 from indexer import CLIPEmbedder
+from llm_parser import SmartQueryParser
 from searcher import PhotoSearcher, SearchResult
 from store import PhotoStore
 from utils import default_db_path, load_thumbnail_array, open_in_finder
@@ -65,6 +66,8 @@ def render_results(results: list[SearchResult], columns: int = 4) -> None:
 
 query = st.text_input("Query", placeholder="cat")
 topk = st.slider("Top K", min_value=1, max_value=100, value=24, step=1)
+smart_query_enabled = st.checkbox("Enable Smart Query (local LLM)", value=False)
+llm_model = st.text_input("LLM Model", value="qwen2.5:3b-instruct")
 col1, col2, col3 = st.columns(3)
 with col1:
     from_date = st.text_input("From date (YYYY-MM-DD)", value="")
@@ -104,8 +107,15 @@ if st.button("Search", type="primary"):
             searcher = get_searcher(DB_PATH)
             embedder = get_embedder()
             media_filter = {"Photo": "photo", "Video": "video", "Both": "both"}[media_option]
+            query_text = query.strip()
+            prompt_list: list[str] | None = None
+            if smart_query_enabled:
+                parser = SmartQueryParser(model=llm_model)
+                intent = parser.parse(query_text)
+                query_text = intent.visual_query or query_text
+                prompt_list = intent.expanded_queries or None
             results = searcher.search(
-                query=query.strip(),
+                query=query_text,
                 topk=topk,
                 embedder=embedder,
                 min_taken_ts=min_ts,
@@ -114,6 +124,7 @@ if st.button("Search", type="primary"):
                 min_score=float(min_score),
                 relative_to_best=float(relative_to_best),
                 media_filter=media_filter,
+                text_prompts=prompt_list,
             )
             st.session_state["results"] = results
 

@@ -8,6 +8,7 @@ from pathlib import Path
 import streamlit as st
 
 from indexer import CLIPEmbedder, PhotoIndexer
+from llm_parser import SmartQueryParser
 from searcher import PhotoSearcher, SearchResult
 from store import PhotoStore
 from utils import choose_folder_dialog_macos, default_db_path, load_thumbnail_array, open_in_finder
@@ -222,6 +223,11 @@ with st.sidebar:
     video_interval_sec = st.number_input("Video frame interval (sec)", min_value=0.1, max_value=30.0, value=1.5, step=0.1)
     video_max_frames = st.number_input("Video max frames", min_value=1, max_value=5000, value=300, step=10)
     video_cache_dir = st.text_input("Video frame cache dir", value=".video_frame_cache")
+    st.subheader("Smart Query")
+    smart_query_enabled = st.checkbox("Enable Smart Query (local LLM)", value=False)
+    llm_model = st.text_input("LLM Model", value="qwen2.5:3b-instruct")
+    llm_timeout = st.number_input("LLM Timeout (sec)", min_value=0.2, max_value=20.0, value=2.0, step=0.1)
+    llm_endpoint = st.text_input("LLM Endpoint", value="http://127.0.0.1:11434/api/generate")
 
 st.subheader("Index")
 if "index_folder" not in st.session_state:
@@ -306,8 +312,18 @@ if st.button("Search"):
         searcher = get_searcher(db_path)
         embedder = get_embedder(model_name=model_name, pretrained=pretrained)
         media_filter = {"Photo": "photo", "Video": "video", "Both": "both"}[media_option]
+        query_text = query.strip()
+        prompt_list: list[str] | None = None
+        if smart_query_enabled:
+            parser = SmartQueryParser(model=llm_model, timeout_sec=float(llm_timeout), endpoint=llm_endpoint)
+            intent = parser.parse(query_text)
+            st.session_state["smart_intent"] = intent
+            query_text = intent.visual_query or query_text
+            prompt_list = intent.expanded_queries or None
+        else:
+            st.session_state.pop("smart_intent", None)
         results = searcher.search(
-            query=query.strip(),
+            query=query_text,
             topk=topk,
             embedder=embedder,
             min_taken_ts=min_ts,
@@ -316,7 +332,19 @@ if st.button("Search"):
             min_score=float(min_score),
             relative_to_best=float(relative_to_best),
             media_filter=media_filter,
+            text_prompts=prompt_list,
         )
         st.session_state["results"] = results
+
+intent = st.session_state.get("smart_intent")
+if intent is not None:
+    with st.expander("Smart Query Parse", expanded=False):
+        st.write(f"Mode: `{intent.parse_mode}`")
+        st.write(f"Visual Query: `{intent.visual_query}`")
+        st.write(f"Objects: `{intent.objects}`")
+        st.write(f"Attributes: `{intent.attributes}`")
+        st.write(f"Location: `{intent.location_text}`")
+        st.write(f"Time: `{intent.time_text}`")
+        st.write(f"Expanded Prompts: `{intent.expanded_queries}`")
 
 render_results(st.session_state.get("results", []), db_path=db_path)
