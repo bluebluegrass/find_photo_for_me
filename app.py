@@ -11,7 +11,7 @@ from indexer import CLIPEmbedder, PhotoIndexer
 from llm_parser import SmartQueryParser
 from searcher import PhotoSearcher
 from store import PhotoStore
-from utils import default_db_path, open_in_finder
+from utils import default_db_path, default_llm_endpoint, default_llm_model, default_llm_timeout, open_in_finder
 
 
 def configure_logging(verbose: bool = False) -> None:
@@ -216,9 +216,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_search.add_argument("--smart-query", action="store_true", help="Use local LLM to parse/expand query")
     p_search.add_argument("--show-parse", action="store_true", help="Print smart-query parse output")
-    p_search.add_argument("--llm-model", default=None, help="Local LLM model name (e.g. qwen2.5:3b-instruct)")
-    p_search.add_argument("--llm-timeout", type=float, default=None, help="LLM parser timeout seconds")
-    p_search.add_argument("--llm-endpoint", default=None, help="LLM runtime endpoint URL")
+    p_search.add_argument(
+        "--llm-model",
+        default=default_llm_model(),
+        help="Local LLM model name (e.g. qwen2.5:3b-instruct)",
+    )
+    p_search.add_argument("--llm-timeout", type=float, default=default_llm_timeout(), help="LLM parser timeout seconds")
+    p_search.add_argument("--llm-endpoint", default=default_llm_endpoint(), help="LLM runtime endpoint URL")
     p_search.add_argument(
         "--min-score",
         type=float,

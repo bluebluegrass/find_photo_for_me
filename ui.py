@@ -11,7 +11,15 @@ from indexer import CLIPEmbedder, PhotoIndexer
 from llm_parser import SmartQueryParser
 from searcher import PhotoSearcher, SearchResult
 from store import PhotoStore
-from utils import choose_folder_dialog_macos, default_db_path, load_thumbnail_array, open_in_finder
+from utils import (
+    choose_folder_dialog_macos,
+    default_db_path,
+    default_llm_endpoint,
+    default_llm_model,
+    default_llm_timeout,
+    load_thumbnail_array,
+    open_in_finder,
+)
 
 st.set_page_config(page_title="LocalPix", layout="wide")
 st.title("LocalPix")
@@ -225,9 +233,15 @@ with st.sidebar:
     video_cache_dir = st.text_input("Video frame cache dir", value=".video_frame_cache")
     st.subheader("Smart Query")
     smart_query_enabled = st.checkbox("Enable Smart Query (local LLM)", value=False)
-    llm_model = st.text_input("LLM Model", value="qwen2.5:3b-instruct")
-    llm_timeout = st.number_input("LLM Timeout (sec)", min_value=0.2, max_value=20.0, value=2.0, step=0.1)
-    llm_endpoint = st.text_input("LLM Endpoint", value="http://127.0.0.1:11434/api/generate")
+    llm_model = st.text_input("LLM Model", value=default_llm_model())
+    llm_timeout = st.number_input(
+        "LLM Timeout (sec)",
+        min_value=0.2,
+        max_value=20.0,
+        value=float(default_llm_timeout()),
+        step=0.1,
+    )
+    llm_endpoint = st.text_input("LLM Endpoint", value=default_llm_endpoint())
 
 st.subheader("Index")
 if "index_folder" not in st.session_state:

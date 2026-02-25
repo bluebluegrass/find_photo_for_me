@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 import logging
-import os
 import re
 from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+from utils import default_llm_endpoint, default_llm_model, default_llm_timeout
 
 LOGGER = logging.getLogger(__name__)
 
@@ -87,9 +88,9 @@ class SmartQueryParser:
         timeout_sec: float | None = None,
         endpoint: str | None = None,
     ) -> None:
-        model_name = model or os.getenv("LOCALPIX_LLM_MODEL", "qwen2.5:3b-instruct")
-        timeout = timeout_sec if timeout_sec is not None else float(os.getenv("LOCALPIX_LLM_TIMEOUT", "2.0"))
-        url = endpoint or os.getenv("LOCALPIX_LLM_ENDPOINT", "http://127.0.0.1:11434/api/generate")
+        model_name = model or default_llm_model()
+        timeout = timeout_sec if timeout_sec is not None else default_llm_timeout()
+        url = endpoint or default_llm_endpoint()
         self.client = OllamaClient(model=model_name, endpoint=url, timeout_sec=timeout)
 
     def parse(self, query: str) -> QueryIntent:

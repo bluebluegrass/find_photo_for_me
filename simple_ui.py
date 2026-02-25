@@ -11,7 +11,7 @@ from indexer import CLIPEmbedder
 from llm_parser import SmartQueryParser
 from searcher import PhotoSearcher, SearchResult
 from store import PhotoStore
-from utils import default_db_path, load_thumbnail_array, open_in_finder
+from utils import default_db_path, default_llm_model, load_thumbnail_array, open_in_finder
 
 st.set_page_config(page_title="LocalPix", layout="wide")
 st.title("LocalPix")
@@ -67,7 +67,7 @@ def render_results(results: list[SearchResult], columns: int = 4) -> None:
 query = st.text_input("Query", placeholder="cat")
 topk = st.slider("Top K", min_value=1, max_value=100, value=24, step=1)
 smart_query_enabled = st.checkbox("Enable Smart Query (local LLM)", value=False)
-llm_model = st.text_input("LLM Model", value="qwen2.5:3b-instruct")
+llm_model = st.text_input("LLM Model", value=default_llm_model())
 col1, col2, col3 = st.columns(3)
 with col1:
     from_date = st.text_input("From date (YYYY-MM-DD)", value="")

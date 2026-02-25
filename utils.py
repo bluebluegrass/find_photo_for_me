@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import logging
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -17,6 +18,9 @@ from pillow_heif import register_heif_opener
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".heic", ".heif"}
 SUPPORTED_VIDEO_EXTENSIONS = {".mp4", ".mov", ".m4v", ".avi", ".mkv"}
 DEFAULT_APP_DB_PATH = Path.home() / "Library" / "Application Support" / "LocalPix" / "photo_index.db"
+DEFAULT_LLM_MODEL = "qwen2.5:3b-instruct"
+DEFAULT_LLM_TIMEOUT_SEC = 2.0
+DEFAULT_LLM_ENDPOINT = "http://127.0.0.1:11434/api/generate"
 
 _HEIF_REGISTERED = False
 _GPS_TAG = 34853
@@ -236,6 +240,27 @@ def choose_folder_dialog_macos(prompt: str = "Select photo folder to index") -> 
 def default_db_path() -> str:
     """Return recommended persistent DB path for macOS app data."""
     return str(DEFAULT_APP_DB_PATH)
+
+
+def default_llm_model() -> str:
+    """Return default local LLM model name for smart-query parsing."""
+    return os.getenv("LOCALPIX_LLM_MODEL", DEFAULT_LLM_MODEL)
+
+
+def default_llm_timeout() -> float:
+    """Return default timeout seconds for local smart-query parsing."""
+    raw = os.getenv("LOCALPIX_LLM_TIMEOUT")
+    if raw is None:
+        return DEFAULT_LLM_TIMEOUT_SEC
+    try:
+        return float(raw)
+    except ValueError:
+        return DEFAULT_LLM_TIMEOUT_SEC
+
+
+def default_llm_endpoint() -> str:
+    """Return default local LLM endpoint URL."""
+    return os.getenv("LOCALPIX_LLM_ENDPOINT", DEFAULT_LLM_ENDPOINT)
 
 
 def ffmpeg_available() -> bool:
