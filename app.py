@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 from indexer import CLIPEmbedder, PhotoIndexer
+from llm_parser import SmartQueryParser
 from searcher import PhotoSearcher
 from store import PhotoStore
 from utils import default_db_path, open_in_finder
@@ -81,8 +82,32 @@ def cmd_search(args: argparse.Namespace) -> int:
             print(f"Invalid date filter: {exc}")
             print("Use format YYYY-MM-DD, e.g. --from-date 2020-01-01 --to-date 2020-12-31")
             return 2
+
+        parsed_intent = None
+        query_text = args.query
+        text_prompts = None
+        if args.smart_query:
+            parser = SmartQueryParser(
+                model=args.llm_model,
+                timeout_sec=args.llm_timeout,
+                endpoint=args.llm_endpoint,
+            )
+            parsed_intent = parser.parse(args.query)
+            query_text = parsed_intent.visual_query or args.query
+            text_prompts = parsed_intent.expanded_queries or None
+
+            if args.show_parse:
+                print("[smart-query]")
+                print(f"  mode:      {parsed_intent.parse_mode}")
+                print(f"  visual:    {parsed_intent.visual_query}")
+                print(f"  objects:   {parsed_intent.objects}")
+                print(f"  attrs:     {parsed_intent.attributes}")
+                print(f"  location:  {parsed_intent.location_text}")
+                print(f"  time:      {parsed_intent.time_text}")
+                print(f"  prompts:   {parsed_intent.expanded_queries}")
+
         results = searcher.search(
-            query=args.query,
+            query=query_text,
             topk=args.topk,
             embedder=embedder,
             min_taken_ts=min_ts,
@@ -90,6 +115,8 @@ def cmd_search(args: argparse.Namespace) -> int:
             has_gps=args.has_gps,
             min_score=args.min_score,
             relative_to_best=args.relative_to_best,
+            media_filter=args.media_filter,
+            text_prompts=text_prompts,
         )
         if not results:
             print("No results.")
@@ -181,6 +208,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_search.add_argument("--from-date", default=None, help="Filter taken date start (YYYY-MM-DD)")
     p_search.add_argument("--to-date", default=None, help="Filter taken date end (YYYY-MM-DD)")
     p_search.add_argument("--has-gps", action="store_true", help="Only return photos with GPS coordinates")
+    p_search.add_argument(
+        "--media-filter",
+        choices=["photo", "video", "both"],
+        default="photo",
+        help="Media type filter for search results",
+    )
+    p_search.add_argument("--smart-query", action="store_true", help="Use local LLM to parse/expand query")
+    p_search.add_argument("--show-parse", action="store_true", help="Print smart-query parse output")
+    p_search.add_argument("--llm-model", default=None, help="Local LLM model name (e.g. qwen2.5:3b-instruct)")
+    p_search.add_argument("--llm-timeout", type=float, default=None, help="LLM parser timeout seconds")
+    p_search.add_argument("--llm-endpoint", default=None, help="LLM runtime endpoint URL")
     p_search.add_argument(
         "--min-score",
         type=float,
