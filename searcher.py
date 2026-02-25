@@ -63,13 +63,24 @@ class PhotoSearcher:
         min_score: float | None = None,
         relative_to_best: float | None = None,
         media_filter: str = "photo",
+        text_prompts: list[str] | None = None,
     ) -> list[SearchResult]:
         """Return top-K results for a text query."""
         if self.matrix.size == 0 or not self.paths:
             return []
 
-        text_emb = embedder.encode_text(query)
-        scores = self.matrix @ text_emb
+        prompts = [p for p in (text_prompts or []) if p and p.strip()]
+        if prompts:
+            prompt_embs = embedder.encode_texts(prompts)
+            if prompt_embs.size == 0:
+                text_emb = embedder.encode_text(query)
+                scores = self.matrix @ text_emb
+            else:
+                score_matrix = self.matrix @ prompt_embs.T
+                scores = score_matrix.mean(axis=1)
+        else:
+            text_emb = embedder.encode_text(query)
+            scores = self.matrix @ text_emb
         mask = np.ones(scores.shape[0], dtype=bool)
         if min_taken_ts is not None:
             mask &= np.isfinite(self.taken_ts) & (self.taken_ts >= float(min_taken_ts))

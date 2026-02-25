@@ -103,6 +103,17 @@ class CLIPEmbedder:
         mean_feat = mean_feat / mean_feat.norm(dim=-1, keepdim=True)
         return mean_feat[0].detach().cpu().numpy().astype(np.float32)
 
+    @torch.inference_mode()
+    def encode_texts(self, texts: list[str]) -> np.ndarray:
+        """Encode multiple text prompts into normalized float32 embeddings."""
+        cleaned = [t.strip() for t in texts if t and t.strip()]
+        if not cleaned:
+            return np.empty((0, 0), dtype=np.float32)
+        tokens = self.tokenizer(cleaned).to(self.device)
+        feats = self.model.encode_text(tokens)
+        feats = feats / feats.norm(dim=-1, keepdim=True)
+        return feats.detach().cpu().numpy().astype(np.float32)
+
 
 ProgressCallback = Callable[[int, int], None]
 
