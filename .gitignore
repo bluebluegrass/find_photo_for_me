@@ -10,3 +10,6 @@ photo_index.db
 *.db-shm
 *.db-wal
 .streamlit/
+.video_frame_cache/
+skipped.tsv
+tests/__pycache__/

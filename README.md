@@ -348,14 +348,15 @@ Table `stats`:
 2. No face recognition or identity labeling.
 - This is not a biometric or person-ID system.
 
-3. No EXIF/date/location filters yet.
-- Search is embedding-based only; metadata filtering is not implemented.
+3. Metadata coverage depends on source files.
+- Date and GPS filters work only when EXIF metadata exists and is readable.
+- Location name understanding in Smart Query is currently a hint for semantic retrieval unless GPS metadata is available.
 
 4. Incremental logic depends on `mtime`.
 - If a file changes without `mtime` update (rare), it may not re-index automatically.
 
-5. No automatic deletion cleanup.
-- If files are removed from disk, old DB rows remain until you add cleanup logic or rebuild index.
+5. LLM Smart Query requires a local runtime.
+- If Ollama (or configured local endpoint) is not running, Smart Query falls back to baseline parsing.
 
 6. macOS-specific open behavior.
 - `--open` and UI open buttons use macOS `open` command.
