@@ -23,8 +23,231 @@ from utils import (
 )
 
 st.set_page_config(page_title="LocalPix", layout="wide")
-st.title("LocalPix")
-st.caption("Search your photos and videos offline.")
+
+st.markdown(
+    """
+    <style>
+    :root {
+        --lp-bg: #f4efe6;
+        --lp-paper: #fbf7f0;
+        --lp-paper-2: #f0e6d8;
+        --lp-ink: #232018;
+        --lp-muted: #6b6458;
+        --lp-accent: #b55d3d;
+        --lp-accent-soft: #e8c5b5;
+        --lp-line: rgba(94, 78, 60, 0.16);
+        --lp-shadow: 0 24px 60px rgba(71, 53, 34, 0.08);
+    }
+
+    .stApp {
+        background:
+            radial-gradient(circle at top right, rgba(181, 93, 61, 0.10), transparent 28rem),
+            linear-gradient(180deg, #f7f2ea 0%, var(--lp-bg) 100%);
+        color: var(--lp-ink);
+    }
+
+    [data-testid="stAppViewContainer"] > .main .block-container {
+        max-width: 1180px;
+        padding-top: 2rem;
+        padding-bottom: 4rem;
+    }
+
+    [data-testid="stSidebar"] {
+        background: linear-gradient(180deg, rgba(246, 241, 233, 0.98) 0%, rgba(239, 230, 218, 0.98) 100%);
+        border-right: 1px solid var(--lp-line);
+    }
+
+    [data-testid="stSidebar"] .block-container {
+        padding-top: 2rem;
+    }
+
+    html, body, [class*="css"] {
+        color: var(--lp-ink);
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+    }
+
+    h1, h2, h3 {
+        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+        letter-spacing: -0.02em;
+        color: var(--lp-ink);
+    }
+
+    h2 {
+        font-size: clamp(1.8rem, 2.8vw, 2.5rem);
+        margin-top: 0.4rem;
+    }
+
+    p, label, [data-testid="stCaptionContainer"] {
+        color: var(--lp-muted);
+    }
+
+    .lp-hero {
+        background:
+            linear-gradient(135deg, rgba(251, 247, 240, 0.92), rgba(240, 230, 216, 0.88)),
+            var(--lp-paper);
+        border: 1px solid rgba(181, 93, 61, 0.14);
+        border-radius: 28px;
+        padding: 1.5rem 1.6rem 1.3rem 1.6rem;
+        box-shadow: var(--lp-shadow);
+        margin: 0 0 1.6rem 0;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .lp-hero::after {
+        content: "";
+        position: absolute;
+        inset: auto -3rem -4rem auto;
+        width: 11rem;
+        height: 11rem;
+        background: radial-gradient(circle, rgba(181, 93, 61, 0.18), transparent 65%);
+        pointer-events: none;
+    }
+
+    .lp-kicker {
+        text-transform: uppercase;
+        letter-spacing: 0.16em;
+        font-size: 0.74rem;
+        color: var(--lp-accent);
+        font-weight: 700;
+        margin-bottom: 0.7rem;
+    }
+
+    .lp-title {
+        font-family: "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+        font-size: clamp(2.3rem, 5vw, 4.2rem);
+        line-height: 0.92;
+        letter-spacing: -0.04em;
+        color: var(--lp-ink);
+        margin: 0;
+        max-width: 10ch;
+    }
+
+    .lp-subtitle {
+        max-width: 42rem;
+        font-size: 1rem;
+        line-height: 1.55;
+        color: var(--lp-muted);
+        margin: 0.95rem 0 1.2rem 0;
+    }
+
+    .lp-pillrow {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+    }
+
+    .lp-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        border-radius: 999px;
+        padding: 0.5rem 0.9rem;
+        background: rgba(255, 250, 244, 0.92);
+        border: 1px solid rgba(94, 78, 60, 0.12);
+        color: var(--lp-ink);
+        font-size: 0.92rem;
+    }
+
+    .lp-section-note {
+        margin: -0.2rem 0 1rem 0;
+        color: var(--lp-muted);
+    }
+
+    .lp-results-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 1rem;
+        margin-top: 0.5rem;
+    }
+
+    .lp-results-copy {
+        color: var(--lp-muted);
+        font-size: 0.98rem;
+    }
+
+    div[data-testid="stExpander"] {
+        border: 1px solid var(--lp-line);
+        border-radius: 18px;
+        background: rgba(251, 247, 240, 0.82);
+    }
+
+    div[data-testid="stTextInput"] input,
+    div[data-testid="stNumberInput"] input,
+    div[data-testid="stSelectbox"] div[data-baseweb="select"] > div,
+    div[data-testid="stDateInput"] input {
+        background: rgba(255, 251, 246, 0.96);
+        border: 1px solid rgba(94, 78, 60, 0.14);
+        border-radius: 16px;
+    }
+
+    div[data-testid="stTextInput"] label,
+    div[data-testid="stSelectbox"] label,
+    div[data-testid="stCheckbox"] label,
+    div[data-testid="stSlider"] label {
+        font-weight: 600;
+        color: var(--lp-ink);
+    }
+
+    .stButton > button,
+    [data-testid="baseButton-secondary"] {
+        border-radius: 999px;
+        min-height: 2.8rem;
+        border: 1px solid rgba(94, 78, 60, 0.12);
+        background: rgba(255, 251, 246, 0.98);
+        color: var(--lp-ink);
+        transition: transform 180ms ease, box-shadow 180ms ease, background 180ms ease;
+    }
+
+    .stButton > button:hover,
+    [data-testid="baseButton-secondary"]:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 10px 24px rgba(71, 53, 34, 0.08);
+        border-color: rgba(181, 93, 61, 0.26);
+    }
+
+    .stButton > button[kind="primary"],
+    [data-testid="baseButton-primary"] {
+        background: linear-gradient(180deg, #c96c49 0%, var(--lp-accent) 100%);
+        color: #fff7f1;
+        border-color: rgba(181, 93, 61, 0.22);
+        box-shadow: 0 14px 28px rgba(181, 93, 61, 0.22);
+    }
+
+    [data-testid="stInfo"] {
+        background: rgba(255, 251, 246, 0.92);
+        border: 1px solid rgba(181, 93, 61, 0.14);
+        border-radius: 18px;
+        color: var(--lp-ink);
+    }
+
+    [data-testid="stAlert"] {
+        border-radius: 18px;
+    }
+
+    [data-testid="stImage"] img {
+        border-radius: 18px;
+    }
+
+    @media (max-width: 900px) {
+        [data-testid="stAppViewContainer"] > .main .block-container {
+            padding-top: 1rem;
+        }
+
+        .lp-hero {
+            padding: 1.15rem 1rem;
+            border-radius: 22px;
+        }
+
+        .lp-title {
+            max-width: none;
+        }
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 
 def _db_key(db_path: str) -> str:
@@ -286,17 +509,28 @@ with st.sidebar:
             )
             llm_endpoint = st.text_input("LLM Endpoint", value=llm_endpoint)
 index_count = get_index_count(db_path)
-status_col, privacy_col = st.columns([3, 2])
-with status_col:
-    if index_count > 0:
-        st.info(f"Library ready: {index_count:,} items indexed")
-    else:
-        st.info("No library indexed yet. Start by choosing a folder below.")
-with privacy_col:
-    st.caption("LocalPix keeps indexing and search on this Mac.")
+library_status = f"{index_count:,} items indexed" if index_count > 0 else "No library indexed yet"
+st.markdown(
+    f"""
+    <section class="lp-hero">
+        <div class="lp-kicker">Private Visual Search</div>
+        <h1 class="lp-title">Find the photo you meant.</h1>
+        <p class="lp-subtitle">
+            Search your personal library with natural language, location hints, and on-device indexing.
+            Nothing leaves this Mac.
+        </p>
+        <div class="lp-pillrow">
+            <span class="lp-pill">{library_status}</span>
+            <span class="lp-pill">Photos and videos</span>
+            <span class="lp-pill">Offline by default</span>
+        </div>
+    </section>
+    """,
+    unsafe_allow_html=True,
+)
 
 st.subheader("Library")
-st.caption("Choose the folder where your photos and videos live.")
+st.markdown('<p class="lp-section-note">Choose the folder where your photos and videos live.</p>', unsafe_allow_html=True)
 if "index_folder" not in st.session_state:
     st.session_state["index_folder"] = ""
 if "pending_index_folder" in st.session_state:
@@ -338,7 +572,7 @@ if st.button("Index Library", type="primary"):
     )
 
 st.subheader("Search")
-st.caption("Describe what you want to find.")
+st.markdown('<p class="lp-section-note">Describe what you want to find.</p>', unsafe_allow_html=True)
 search_bar_col, search_button_col = st.columns([5, 1])
 with search_bar_col:
     query = st.text_input(
@@ -464,10 +698,17 @@ if location_status and location_status.get("query"):
 results = st.session_state.get("results")
 last_query = st.session_state.get("last_query")
 if results:
-    st.subheader("Results")
-    st.caption(f"{len(results)} matches for “{last_query}”")
+    st.markdown(
+        f"""
+        <div class="lp-results-head">
+            <h2>Results</h2>
+            <div class="lp-results-copy">{len(results)} matches for “{last_query}”</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 elif last_query:
-    st.subheader("Results")
+    st.markdown('<div class="lp-results-head"><h2>Results</h2></div>', unsafe_allow_html=True)
     st.info(f"No matches for “{last_query}”. Try a simpler description or relax the search options.")
 
 if results is not None:
