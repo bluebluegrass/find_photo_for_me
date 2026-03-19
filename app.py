@@ -11,7 +11,14 @@ from indexer import CLIPEmbedder, PhotoIndexer
 from llm_parser import SmartQueryParser
 from searcher import PhotoSearcher
 from store import PhotoStore
-from utils import default_db_path, default_llm_endpoint, default_llm_model, default_llm_timeout, open_in_finder
+from utils import (
+    default_db_path,
+    default_llm_endpoint,
+    default_llm_model,
+    default_llm_timeout,
+    default_location_mode,
+    open_in_finder,
+)
 
 
 def configure_logging(verbose: bool = False) -> None:
@@ -51,6 +58,7 @@ def cmd_index(args: argparse.Namespace) -> int:
         print(f"Unchanged: {summary.total_unchanged}")
         print(f"Errors:    {summary.total_errors}")
         print(f"Pruned:    {summary.total_pruned}")
+        print(f"Location enriched: {summary.total_location_enriched}")
         print(f"DB count:  {store.get_total_count()}")
         print(f"DB file:   {Path(store.db_path)}")
         if args.skip_log:
@@ -103,6 +111,7 @@ def cmd_search(args: argparse.Namespace) -> int:
                 print(f"  objects:   {parsed_intent.objects}")
                 print(f"  attrs:     {parsed_intent.attributes}")
                 print(f"  location:  {parsed_intent.location_text}")
+                print(f"  location_norm: {parsed_intent.normalized_location_text}")
                 print(f"  time:      {parsed_intent.time_text}")
                 print(f"  prompts:   {parsed_intent.expanded_queries}")
 
@@ -117,7 +126,14 @@ def cmd_search(args: argparse.Namespace) -> int:
             relative_to_best=args.relative_to_best,
             media_filter=args.media_filter,
             text_prompts=text_prompts,
+            location_query=parsed_intent.normalized_location_text if parsed_intent is not None else None,
+            location_mode=args.location_mode,
         )
+        if parsed_intent is not None and parsed_intent.location_text:
+            print(
+                f"[location] query={parsed_intent.location_text!r} mode={args.location_mode} "
+                f"status={searcher.last_location_status} matches={searcher.last_location_match_count}"
+            )
         if not results:
             print("No results.")
             return 0
@@ -129,11 +145,19 @@ def cmd_search(args: argparse.Namespace) -> int:
             gps_text = "-"
             if res.latitude is not None and res.longitude is not None:
                 gps_text = f"{res.latitude:.6f},{res.longitude:.6f}"
+            location_text = "-"
+            if res.city_name or res.country_name or res.country_code:
+                city = res.city_name or "-"
+                country = res.country_name or (res.country_code or "-")
+                location_text = f"{city}, {country}"
             extra = ""
             if res.media_type == "video_frame":
                 ts_text = f"{res.frame_ts:.1f}s" if res.frame_ts is not None else "-"
                 extra = f"  video_ts={ts_text}  source={res.source_path}"
-            print(f"{res.rank:>3}  {res.score:>8.4f}  {taken_text:>19}  {gps_text:>23}  {res.file_path}{extra}")
+            print(
+                f"{res.rank:>3}  {res.score:>8.4f}  {taken_text:>19}  {gps_text:>23}  "
+                f"{location_text:>28}  {res.file_path}{extra}"
+            )
 
         if args.open is not None:
             open_count = min(args.open, len(results))
@@ -215,6 +239,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Media type filter for search results",
     )
     p_search.add_argument("--smart-query", action="store_true", help="Use local LLM to parse/expand query")
+    p_search.add_argument(
+        "--location-mode",
+        choices=["hybrid", "strict", "off"],
+        default=default_location_mode(),
+        help="How parsed Smart Query location text is applied to indexed location metadata",
+    )
     p_search.add_argument("--show-parse", action="store_true", help="Print smart-query parse output")
     p_search.add_argument(
         "--llm-model",

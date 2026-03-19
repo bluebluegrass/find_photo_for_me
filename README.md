@@ -21,6 +21,7 @@ Traditional folder search depends on filenames and metadata. This tool uses **vi
 - HEIC/HEIF support via `pillow-heif`
 - Video search via sampled CLIP frame embeddings (ffmpeg)
 - Optional local LLM smart-query parser (offline/local runtime)
+- Offline reverse geocoding for country/city-aware Smart Query filtering
 - Incremental indexing (mtime-based)
 - Fast search using in-memory NumPy matrix + dot-product similarity
 - SQLite-backed index (persistent app-data DB by default)
@@ -64,6 +65,8 @@ source .venv/bin/activate
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
 ```
+
+`requirements.txt` includes `reverse_geocoder`, which LocalPix uses offline to map GPS coordinates to city/country metadata during indexing.
 
 Install ffmpeg (Homebrew):
 
@@ -119,7 +122,7 @@ python app.py --device cpu search --query "cat"
 python app.py index --path "/Volumes/ExternalDrive/Photos"
 ```
 
-To backfill newly added metadata (taken time/GPS) for already indexed files:
+To backfill newly added metadata (taken time/GPS/location) for already indexed files:
 
 ```bash
 python app.py index --path "/Volumes/ExternalDrive/Photos" --force
@@ -134,7 +137,7 @@ python app.py search --query "cat" --topk 30
 Smart Query (local LLM parse + prompt expansion):
 
 ```bash
-python app.py search --query "black cat in turkey" --smart-query --show-parse --media-filter both
+python app.py search --query "black cat in turkey" --smart-query --show-parse --media-filter both --location-mode hybrid
 ```
 
 Filter by taken date and GPS availability:
@@ -225,6 +228,7 @@ Options:
 - `--has-gps` (optional): only return results with GPS coordinates
 - `--media-filter` (default `photo`): `photo`, `video`, or `both`
 - `--smart-query` (optional): use local LLM query parser/expansion
+- `--location-mode` (default from env or `hybrid`): `hybrid`, `strict`, or `off`
 - `--show-parse` (optional): print parsed smart-query details
 - `--llm-model` (default from env or `qwen2.5:3b-instruct`)
 - `--llm-timeout` (default from env or `2.0`)
@@ -259,6 +263,9 @@ Smart Query parses natural language into structured intent and expanded prompts.
 
 - input: `black cat in turkey`
 - parsed intent: visual query `black cat`, location hint `turkey`, expanded prompts for retrieval
+- indexed GPS metadata is reverse-geocoded offline into normalized `city_name`, `country_name`, and `country_code`
+- `--location-mode hybrid` restricts to matching locations when matches exist, otherwise falls back to semantic retrieval
+- `--location-mode strict` returns only matching locations and excludes no-GPS rows
 
 Smart Query is local/offline when your model runtime is local.
 
@@ -283,6 +290,7 @@ If the LLM runtime is unavailable, LocalPix automatically falls back to baseline
    - new/changed => decode image, generate embedding, upsert row
 4. Embeddings are stored as `float32` blobs.
 5. Width/height are stored when decode succeeds.
+6. If GPS exists, LocalPix reverse-geocodes it offline into normalized city/country metadata.
 
 HEIC/HEIF decode failures are skipped gracefully and logged.
 
@@ -292,7 +300,8 @@ HEIC/HEIF decode failures are skipped gracefully and logged.
 2. Encode query text into CLIP embedding.
 3. L2-normalized dot product = similarity score.
 4. Use `np.argpartition` for efficient top-K selection.
-5. Return ranked results.
+5. If Smart Query produced `location_text`, optionally apply exact normalized location filtering against indexed city/country metadata.
+6. Return ranked results.
 
 ## Database Schema
 
@@ -307,6 +316,12 @@ Table `photos`:
 - `taken_ts INTEGER` (EXIF capture timestamp, unix seconds)
 - `latitude REAL` (EXIF GPS latitude)
 - `longitude REAL` (EXIF GPS longitude)
+- `country_code TEXT` (normalized ISO-like country code from reverse geocoder)
+- `country_name TEXT` (normalized lowercase country name)
+- `city_name TEXT` (normalized lowercase city name)
+- `media_type TEXT` (`image` or `video_frame`)
+- `source_path TEXT` (original media path; for images this equals `file_path`)
+- `frame_ts REAL` (video frame timestamp in seconds)
 - `embedding BLOB NOT NULL` (`float32` array bytes)
 - `updated_at INTEGER NOT NULL`
 
@@ -349,8 +364,8 @@ Table `stats`:
 - This is not a biometric or person-ID system.
 
 3. Metadata coverage depends on source files.
-- Date and GPS filters work only when EXIF metadata exists and is readable.
-- Location name understanding in Smart Query is currently a hint for semantic retrieval unless GPS metadata is available.
+- Date, GPS, and location filters work only when EXIF metadata exists and is readable.
+- Location matching is exact normalized city/country text in v1. There is no fuzzy matching or multilingual alias dictionary yet.
 
 4. Incremental logic depends on `mtime`.
 - If a file changes without `mtime` update (rare), it may not re-index automatically.

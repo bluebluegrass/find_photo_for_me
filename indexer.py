@@ -22,6 +22,7 @@ from utils import (
     is_supported_video,
     iter_files_recursive,
     load_image_rgb_with_metadata,
+    reverse_geocode_location,
 )
 
 LOGGER = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ class IndexSummary:
     total_errors: int = 0
     total_unchanged: int = 0
     total_pruned: int = 0
+    total_location_enriched: int = 0
 
 
 class CLIPEmbedder:
@@ -154,7 +156,20 @@ class PhotoIndexer:
 
         summary = IndexSummary(total_files_seen=total_files)
         batch_tensors: list[torch.Tensor] = []
-        batch_meta: list[tuple[str, int, int, int, int | None, float | None, float | None]] = []
+        batch_meta: list[
+            tuple[
+                str,
+                int,
+                int,
+                int,
+                int | None,
+                float | None,
+                float | None,
+                str | None,
+                str | None,
+                str | None,
+            ]
+        ] = []
         skip_log_file = None
         if skip_log_path is not None:
             skip_path = Path(skip_log_path).expanduser().resolve()
@@ -173,7 +188,19 @@ class PhotoIndexer:
             if not batch_tensors:
                 return
             embs = self.embedder.encode_image_tensors(batch_tensors)
-            for i, (file_path, mtime, width, height, taken_ts, latitude, longitude) in enumerate(batch_meta):
+            for i, row in enumerate(batch_meta):
+                (
+                    file_path,
+                    mtime,
+                    width,
+                    height,
+                    taken_ts,
+                    latitude,
+                    longitude,
+                    country_code,
+                    country_name,
+                    city_name,
+                ) = row
                 record = PhotoRecord(
                     file_path=file_path,
                     mtime=mtime,
@@ -182,6 +209,9 @@ class PhotoIndexer:
                     taken_ts=taken_ts,
                     latitude=latitude,
                     longitude=longitude,
+                    country_code=country_code,
+                    country_name=country_name,
+                    city_name=city_name,
                     media_type="image",
                     source_path=file_path,
                     frame_ts=None,
@@ -246,9 +276,25 @@ class PhotoIndexer:
             try:
                 image, metadata = load_image_rgb_with_metadata(file_path)
                 width, height = image.size
+                location = reverse_geocode_location(metadata.latitude, metadata.longitude)
+                if location.country_code or location.country_name or location.city_name:
+                    summary.total_location_enriched += 1
                 tensor = self.embedder.preprocess_image(image)
                 batch_tensors.append(tensor)
-                batch_meta.append((path_str, mtime, width, height, metadata.taken_ts, metadata.latitude, metadata.longitude))
+                batch_meta.append(
+                    (
+                        path_str,
+                        mtime,
+                        width,
+                        height,
+                        metadata.taken_ts,
+                        metadata.latitude,
+                        metadata.longitude,
+                        location.country_code,
+                        location.country_name,
+                        location.city_name,
+                    )
+                )
             except Exception:
                 LOGGER.warning("Skipping decode failure: %s", file_path, exc_info=True)
                 summary.total_skipped += 1
@@ -279,6 +325,7 @@ class PhotoIndexer:
         self.store.upsert_stat("last_total_errors", summary.total_errors)
         self.store.upsert_stat("last_total_unchanged", summary.total_unchanged)
         self.store.upsert_stat("last_total_pruned", summary.total_pruned)
+        self.store.upsert_stat("last_total_location_enriched", summary.total_location_enriched)
         self.store.commit()
 
         return summary
@@ -358,6 +405,9 @@ class PhotoIndexer:
                     taken_ts=None,
                     latitude=None,
                     longitude=None,
+                    country_code=None,
+                    country_name=None,
+                    city_name=None,
                     media_type="video_frame",
                     source_path=source_path,
                     frame_ts=frame_ts,

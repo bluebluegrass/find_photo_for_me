@@ -21,6 +21,9 @@ class PhotoRecord:
     taken_ts: int | None
     latitude: float | None
     longitude: float | None
+    country_code: str | None
+    country_name: str | None
+    city_name: str | None
     media_type: str
     source_path: str
     frame_ts: float | None
@@ -52,6 +55,9 @@ class PhotoStore:
                 taken_ts INTEGER,
                 latitude REAL,
                 longitude REAL,
+                country_code TEXT,
+                country_name TEXT,
+                city_name TEXT,
                 media_type TEXT NOT NULL DEFAULT 'image',
                 source_path TEXT,
                 frame_ts REAL,
@@ -82,11 +88,20 @@ class PhotoStore:
             self.conn.execute("ALTER TABLE photos ADD COLUMN longitude REAL")
         if "media_type" not in existing:
             self.conn.execute("ALTER TABLE photos ADD COLUMN media_type TEXT NOT NULL DEFAULT 'image'")
+        if "country_code" not in existing:
+            self.conn.execute("ALTER TABLE photos ADD COLUMN country_code TEXT")
+        if "country_name" not in existing:
+            self.conn.execute("ALTER TABLE photos ADD COLUMN country_name TEXT")
+        if "city_name" not in existing:
+            self.conn.execute("ALTER TABLE photos ADD COLUMN city_name TEXT")
         if "source_path" not in existing:
             self.conn.execute("ALTER TABLE photos ADD COLUMN source_path TEXT")
             self.conn.execute("UPDATE photos SET source_path=file_path WHERE source_path IS NULL")
         if "frame_ts" not in existing:
             self.conn.execute("ALTER TABLE photos ADD COLUMN frame_ts REAL")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_photos_country_code ON photos(country_code)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_photos_country_name ON photos(country_name)")
+        self.conn.execute("CREATE INDEX IF NOT EXISTS idx_photos_city_name ON photos(city_name)")
 
     def close(self) -> None:
         """Close database connection."""
@@ -103,9 +118,23 @@ class PhotoStore:
         self.conn.execute(
             """
             INSERT INTO photos (
-                file_path, mtime, width, height, taken_ts, latitude, longitude, media_type, source_path, frame_ts, embedding, updated_at
+                file_path,
+                mtime,
+                width,
+                height,
+                taken_ts,
+                latitude,
+                longitude,
+                country_code,
+                country_name,
+                city_name,
+                media_type,
+                source_path,
+                frame_ts,
+                embedding,
+                updated_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(file_path) DO UPDATE SET
                 mtime=excluded.mtime,
                 width=excluded.width,
@@ -113,6 +142,9 @@ class PhotoStore:
                 taken_ts=excluded.taken_ts,
                 latitude=excluded.latitude,
                 longitude=excluded.longitude,
+                country_code=excluded.country_code,
+                country_name=excluded.country_name,
+                city_name=excluded.city_name,
                 media_type=excluded.media_type,
                 source_path=excluded.source_path,
                 frame_ts=excluded.frame_ts,
@@ -127,6 +159,9 @@ class PhotoStore:
                 record.taken_ts,
                 record.latitude,
                 record.longitude,
+                record.country_code,
+                record.country_name,
+                record.city_name,
                 record.media_type,
                 record.source_path,
                 record.frame_ts,
@@ -141,18 +176,41 @@ class PhotoStore:
 
     def load_embeddings_matrix(
         self,
-    ) -> tuple[list[str], np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[str], list[str], np.ndarray]:
+    ) -> tuple[
+        list[str],
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        np.ndarray,
+        list[str | None],
+        list[str | None],
+        list[str | None],
+        list[str],
+        list[str],
+        np.ndarray,
+    ]:
         """Load embeddings + metadata as aligned arrays."""
         rows = self.conn.execute(
             """
-            SELECT file_path, embedding, taken_ts, latitude, longitude, media_type, source_path, frame_ts
+            SELECT
+                file_path,
+                embedding,
+                taken_ts,
+                latitude,
+                longitude,
+                country_code,
+                country_name,
+                city_name,
+                media_type,
+                source_path,
+                frame_ts
             FROM photos
             ORDER BY file_path ASC
             """
         ).fetchall()
         if not rows:
             empty = np.empty((0,), dtype=np.float64)
-            return [], np.empty((0, 0), dtype=np.float32), empty, empty, empty, [], [], empty
+            return [], np.empty((0, 0), dtype=np.float32), empty, empty, empty, [], [], [], [], [], empty
 
         first_emb = np.frombuffer(rows[0][1], dtype=np.float32)
         dim = int(first_emb.shape[0])
@@ -161,11 +219,27 @@ class PhotoStore:
         taken_ts = np.full((len(rows),), np.nan, dtype=np.float64)
         lat = np.full((len(rows),), np.nan, dtype=np.float64)
         lon = np.full((len(rows),), np.nan, dtype=np.float64)
+        country_codes: list[str | None] = []
+        country_names: list[str | None] = []
+        city_names: list[str | None] = []
         media_types: list[str] = []
         source_paths: list[str] = []
         frame_ts = np.full((len(rows),), np.nan, dtype=np.float64)
 
-        for idx, (file_path, blob, taken_val, lat_val, lon_val, media_type, source_path, frame_val) in enumerate(rows):
+        for idx, row in enumerate(rows):
+            (
+                file_path,
+                blob,
+                taken_val,
+                lat_val,
+                lon_val,
+                country_code,
+                country_name,
+                city_name,
+                media_type,
+                source_path,
+                frame_val,
+            ) = row
             emb = np.frombuffer(blob, dtype=np.float32)
             if emb.shape[0] != dim:
                 raise ValueError(
@@ -180,12 +254,27 @@ class PhotoStore:
                 lat[idx] = float(lat_val)
             if lon_val is not None:
                 lon[idx] = float(lon_val)
+            country_codes.append(country_code)
+            country_names.append(country_name)
+            city_names.append(city_name)
             media_types.append(media_type or "image")
             source_paths.append(source_path or file_path)
             if frame_val is not None:
                 frame_ts[idx] = float(frame_val)
 
-        return paths, matrix, taken_ts, lat, lon, media_types, source_paths, frame_ts
+        return (
+            paths,
+            matrix,
+            taken_ts,
+            lat,
+            lon,
+            country_codes,
+            country_names,
+            city_names,
+            media_types,
+            source_paths,
+            frame_ts,
+        )
 
     def get_total_count(self) -> int:
         """Total number of indexed photos."""

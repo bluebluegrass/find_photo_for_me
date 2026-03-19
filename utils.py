@@ -1,4 +1,4 @@
-"""Utility helpers for image handling, HEIC support, and macOS file opening."""
+"""Utility helpers for media handling, metadata extraction, and app defaults."""
 
 from __future__ import annotations
 
@@ -21,8 +21,263 @@ DEFAULT_APP_DB_PATH = Path.home() / "Library" / "Application Support" / "LocalPi
 DEFAULT_LLM_MODEL = "qwen2.5:3b-instruct"
 DEFAULT_LLM_TIMEOUT_SEC = 2.0
 DEFAULT_LLM_ENDPOINT = "http://127.0.0.1:11434/api/generate"
+DEFAULT_LOCATION_MODE = "hybrid"
+
+COUNTRY_CODE_TO_NAME = {
+    "ad": "andorra",
+    "ae": "united arab emirates",
+    "af": "afghanistan",
+    "ag": "antigua and barbuda",
+    "ai": "anguilla",
+    "al": "albania",
+    "am": "armenia",
+    "ao": "angola",
+    "aq": "antarctica",
+    "ar": "argentina",
+    "as": "american samoa",
+    "at": "austria",
+    "au": "australia",
+    "aw": "aruba",
+    "ax": "aland islands",
+    "az": "azerbaijan",
+    "ba": "bosnia and herzegovina",
+    "bb": "barbados",
+    "bd": "bangladesh",
+    "be": "belgium",
+    "bf": "burkina faso",
+    "bg": "bulgaria",
+    "bh": "bahrain",
+    "bi": "burundi",
+    "bj": "benin",
+    "bl": "saint barthelemy",
+    "bm": "bermuda",
+    "bn": "brunei",
+    "bo": "bolivia",
+    "bq": "caribbean netherlands",
+    "br": "brazil",
+    "bs": "bahamas",
+    "bt": "bhutan",
+    "bv": "bouvet island",
+    "bw": "botswana",
+    "by": "belarus",
+    "bz": "belize",
+    "ca": "canada",
+    "cc": "cocos islands",
+    "cd": "democratic republic of the congo",
+    "cf": "central african republic",
+    "cg": "republic of the congo",
+    "ch": "switzerland",
+    "ci": "ivory coast",
+    "ck": "cook islands",
+    "cl": "chile",
+    "cm": "cameroon",
+    "cn": "china",
+    "co": "colombia",
+    "cr": "costa rica",
+    "cu": "cuba",
+    "cv": "cape verde",
+    "cw": "curacao",
+    "cx": "christmas island",
+    "cy": "cyprus",
+    "cz": "czechia",
+    "de": "germany",
+    "dj": "djibouti",
+    "dk": "denmark",
+    "dm": "dominica",
+    "do": "dominican republic",
+    "dz": "algeria",
+    "ec": "ecuador",
+    "ee": "estonia",
+    "eg": "egypt",
+    "eh": "western sahara",
+    "er": "eritrea",
+    "es": "spain",
+    "et": "ethiopia",
+    "fi": "finland",
+    "fj": "fiji",
+    "fk": "falkland islands",
+    "fm": "micronesia",
+    "fo": "faroe islands",
+    "fr": "france",
+    "ga": "gabon",
+    "gb": "united kingdom",
+    "gd": "grenada",
+    "ge": "georgia",
+    "gf": "french guiana",
+    "gg": "guernsey",
+    "gh": "ghana",
+    "gi": "gibraltar",
+    "gl": "greenland",
+    "gm": "gambia",
+    "gn": "guinea",
+    "gp": "guadeloupe",
+    "gq": "equatorial guinea",
+    "gr": "greece",
+    "gs": "south georgia and the south sandwich islands",
+    "gt": "guatemala",
+    "gu": "guam",
+    "gw": "guinea-bissau",
+    "gy": "guyana",
+    "hk": "hong kong",
+    "hm": "heard island and mcdonald islands",
+    "hn": "honduras",
+    "hr": "croatia",
+    "ht": "haiti",
+    "hu": "hungary",
+    "id": "indonesia",
+    "ie": "ireland",
+    "il": "israel",
+    "im": "isle of man",
+    "in": "india",
+    "io": "british indian ocean territory",
+    "iq": "iraq",
+    "ir": "iran",
+    "is": "iceland",
+    "it": "italy",
+    "je": "jersey",
+    "jm": "jamaica",
+    "jo": "jordan",
+    "jp": "japan",
+    "ke": "kenya",
+    "kg": "kyrgyzstan",
+    "kh": "cambodia",
+    "ki": "kiribati",
+    "km": "comoros",
+    "kn": "saint kitts and nevis",
+    "kp": "north korea",
+    "kr": "south korea",
+    "kw": "kuwait",
+    "ky": "cayman islands",
+    "kz": "kazakhstan",
+    "la": "laos",
+    "lb": "lebanon",
+    "lc": "saint lucia",
+    "li": "liechtenstein",
+    "lk": "sri lanka",
+    "lr": "liberia",
+    "ls": "lesotho",
+    "lt": "lithuania",
+    "lu": "luxembourg",
+    "lv": "latvia",
+    "ly": "libya",
+    "ma": "morocco",
+    "mc": "monaco",
+    "md": "moldova",
+    "me": "montenegro",
+    "mf": "saint martin",
+    "mg": "madagascar",
+    "mh": "marshall islands",
+    "mk": "north macedonia",
+    "ml": "mali",
+    "mm": "myanmar",
+    "mn": "mongolia",
+    "mo": "macao",
+    "mp": "northern mariana islands",
+    "mq": "martinique",
+    "mr": "mauritania",
+    "ms": "montserrat",
+    "mt": "malta",
+    "mu": "mauritius",
+    "mv": "maldives",
+    "mw": "malawi",
+    "mx": "mexico",
+    "my": "malaysia",
+    "mz": "mozambique",
+    "na": "namibia",
+    "nc": "new caledonia",
+    "ne": "niger",
+    "nf": "norfolk island",
+    "ng": "nigeria",
+    "ni": "nicaragua",
+    "nl": "netherlands",
+    "no": "norway",
+    "np": "nepal",
+    "nr": "nauru",
+    "nu": "niue",
+    "nz": "new zealand",
+    "om": "oman",
+    "pa": "panama",
+    "pe": "peru",
+    "pf": "french polynesia",
+    "pg": "papua new guinea",
+    "ph": "philippines",
+    "pk": "pakistan",
+    "pl": "poland",
+    "pm": "saint pierre and miquelon",
+    "pn": "pitcairn islands",
+    "pr": "puerto rico",
+    "ps": "palestine",
+    "pt": "portugal",
+    "pw": "palau",
+    "py": "paraguay",
+    "qa": "qatar",
+    "re": "reunion",
+    "ro": "romania",
+    "rs": "serbia",
+    "ru": "russia",
+    "rw": "rwanda",
+    "sa": "saudi arabia",
+    "sb": "solomon islands",
+    "sc": "seychelles",
+    "sd": "sudan",
+    "se": "sweden",
+    "sg": "singapore",
+    "sh": "saint helena",
+    "si": "slovenia",
+    "sj": "svalbard and jan mayen",
+    "sk": "slovakia",
+    "sl": "sierra leone",
+    "sm": "san marino",
+    "sn": "senegal",
+    "so": "somalia",
+    "sr": "suriname",
+    "ss": "south sudan",
+    "st": "sao tome and principe",
+    "sv": "el salvador",
+    "sx": "sint maarten",
+    "sy": "syria",
+    "sz": "eswatini",
+    "tc": "turks and caicos islands",
+    "td": "chad",
+    "tf": "french southern territories",
+    "tg": "togo",
+    "th": "thailand",
+    "tj": "tajikistan",
+    "tk": "tokelau",
+    "tl": "timor-leste",
+    "tm": "turkmenistan",
+    "tn": "tunisia",
+    "to": "tonga",
+    "tr": "turkey",
+    "tt": "trinidad and tobago",
+    "tv": "tuvalu",
+    "tw": "taiwan",
+    "tz": "tanzania",
+    "ua": "ukraine",
+    "ug": "uganda",
+    "um": "u.s. minor outlying islands",
+    "us": "united states",
+    "uy": "uruguay",
+    "uz": "uzbekistan",
+    "va": "vatican city",
+    "vc": "saint vincent and the grenadines",
+    "ve": "venezuela",
+    "vg": "british virgin islands",
+    "vi": "u.s. virgin islands",
+    "vn": "vietnam",
+    "vu": "vanuatu",
+    "wf": "wallis and futuna",
+    "ws": "samoa",
+    "xk": "kosovo",
+    "ye": "yemen",
+    "yt": "mayotte",
+    "za": "south africa",
+    "zm": "zambia",
+    "zw": "zimbabwe",
+}
 
 _HEIF_REGISTERED = False
+_RG_IMPORT_WARNED = False
 _GPS_TAG = 34853
 _GPS_INFO_TAG = "GPSInfo"
 
@@ -34,6 +289,15 @@ class ImageMetadata:
     taken_ts: int | None = None
     latitude: float | None = None
     longitude: float | None = None
+
+
+@dataclass(slots=True)
+class LocationMetadata:
+    """Normalized location metadata derived from GPS coordinates."""
+
+    country_code: str | None = None
+    country_name: str | None = None
+    city_name: str | None = None
 
 
 def configure_heif_support() -> None:
@@ -261,6 +525,56 @@ def default_llm_timeout() -> float:
 def default_llm_endpoint() -> str:
     """Return default local LLM endpoint URL."""
     return os.getenv("LOCALPIX_LLM_ENDPOINT", DEFAULT_LLM_ENDPOINT)
+
+
+def default_location_mode() -> str:
+    """Return default location filter mode for Smart Query."""
+    value = os.getenv("LOCALPIX_LOCATION_MODE", DEFAULT_LOCATION_MODE).strip().lower()
+    if value in {"hybrid", "strict", "off"}:
+        return value
+    return DEFAULT_LOCATION_MODE
+
+
+def normalize_location_text(text: str | None) -> str | None:
+    """Normalize location text for exact in-memory matching."""
+    if text is None:
+        return None
+    normalized = " ".join(text.strip().lower().split())
+    return normalized or None
+
+
+def reverse_geocode_location(latitude: float | None, longitude: float | None) -> LocationMetadata:
+    """Resolve GPS coordinates into country/city metadata using offline reverse geocoding."""
+    global _RG_IMPORT_WARNED
+    if latitude is None or longitude is None:
+        return LocationMetadata()
+    try:
+        import reverse_geocoder as rg
+    except ImportError:
+        if not _RG_IMPORT_WARNED:
+            logging.info("reverse_geocoder is not installed; skipping location enrichment.")
+            _RG_IMPORT_WARNED = True
+        return LocationMetadata()
+
+    try:
+        matches = rg.search((latitude, longitude), mode=1)
+    except Exception:
+        logging.exception("Reverse geocoding failed for coordinates (%s, %s)", latitude, longitude)
+        return LocationMetadata()
+
+    if not matches:
+        return LocationMetadata()
+
+    match = matches[0]
+    country_code = normalize_location_text(str(match.get("cc", "")) or None)
+    country_name = COUNTRY_CODE_TO_NAME.get(country_code or "")
+    city_name = normalize_location_text(str(match.get("name", "")) or None)
+
+    return LocationMetadata(
+        country_code=country_code,
+        country_name=country_name,
+        city_name=city_name,
+    )
 
 
 def ffmpeg_available() -> bool:

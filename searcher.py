@@ -8,6 +8,7 @@ import numpy as np
 
 from indexer import CLIPEmbedder
 from store import PhotoStore
+from utils import normalize_location_text
 
 
 @dataclass(slots=True)
@@ -20,6 +21,9 @@ class SearchResult:
     taken_ts: int | None
     latitude: float | None
     longitude: float | None
+    country_code: str | None
+    country_name: str | None
+    city_name: str | None
     media_type: str
     source_path: str
     frame_ts: float | None
@@ -35,9 +39,16 @@ class PhotoSearcher:
         self.taken_ts = np.empty((0,), dtype=np.float64)
         self.latitude = np.empty((0,), dtype=np.float64)
         self.longitude = np.empty((0,), dtype=np.float64)
+        self.country_codes: list[str | None] = []
+        self.country_names: list[str | None] = []
+        self.city_names: list[str | None] = []
         self.media_types: list[str] = []
         self.source_paths: list[str] = []
         self.frame_ts = np.empty((0,), dtype=np.float64)
+        self.last_location_status = "off"
+        self.last_location_query: str | None = None
+        self.last_location_mode = "off"
+        self.last_location_match_count = 0
 
     def load_index(self) -> None:
         """Load all stored embeddings into memory."""
@@ -47,6 +58,9 @@ class PhotoSearcher:
             self.taken_ts,
             self.latitude,
             self.longitude,
+            self.country_codes,
+            self.country_names,
+            self.city_names,
             self.media_types,
             self.source_paths,
             self.frame_ts,
@@ -64,10 +78,16 @@ class PhotoSearcher:
         relative_to_best: float | None = None,
         media_filter: str = "photo",
         text_prompts: list[str] | None = None,
+        location_query: str | None = None,
+        location_mode: str = "off",
     ) -> list[SearchResult]:
         """Return top-K results for a text query."""
         if self.matrix.size == 0 or not self.paths:
             return []
+        self.last_location_status = "off"
+        self.last_location_query = normalize_location_text(location_query)
+        self.last_location_mode = location_mode
+        self.last_location_match_count = 0
 
         prompts = [p for p in (text_prompts or []) if p and p.strip()]
         if prompts:
@@ -98,6 +118,37 @@ class PhotoSearcher:
             raise ValueError(f"Unsupported media_filter: {media_filter}")
 
         valid_idx = np.where(mask)[0]
+        if valid_idx.size == 0:
+            return []
+
+        normalized_location = normalize_location_text(location_query)
+        if location_mode not in {"hybrid", "strict", "off"}:
+            raise ValueError(f"Unsupported location_mode: {location_mode}")
+        if normalized_location and location_mode != "off":
+            location_mask = self._location_mask(valid_idx, normalized_location)
+            match_count = int(np.count_nonzero(location_mask))
+            self.last_location_query = normalized_location
+            self.last_location_mode = location_mode
+            self.last_location_match_count = match_count
+            if location_mode == "strict":
+                if match_count == 0:
+                    self.last_location_status = "strict_no_match"
+                    return []
+                valid_idx = valid_idx[location_mask]
+                self.last_location_status = "strict_applied"
+            else:
+                if match_count > 0:
+                    valid_idx = valid_idx[location_mask]
+                    self.last_location_status = "hybrid_applied"
+                else:
+                    self.last_location_status = "hybrid_fallback_no_match"
+        elif normalized_location:
+            self.last_location_status = "off"
+            self.last_location_query = normalized_location
+            self.last_location_mode = "off"
+        else:
+            self.last_location_status = "skipped_no_location_query"
+
         if valid_idx.size == 0:
             return []
         valid_scores = scores[valid_idx]
@@ -137,9 +188,23 @@ class PhotoSearcher:
                     taken_ts=int(taken_val) if np.isfinite(taken_val) else None,
                     latitude=float(lat_val) if np.isfinite(lat_val) else None,
                     longitude=float(lon_val) if np.isfinite(lon_val) else None,
+                    country_code=self.country_codes[int(row_idx)] if self.country_codes else None,
+                    country_name=self.country_names[int(row_idx)] if self.country_names else None,
+                    city_name=self.city_names[int(row_idx)] if self.city_names else None,
                     media_type=self.media_types[int(row_idx)] if self.media_types else "image",
                     source_path=self.source_paths[int(row_idx)] if self.source_paths else self.paths[int(row_idx)],
                     frame_ts=float(frame_val) if np.isfinite(frame_val) else None,
                 )
             )
         return results
+
+    def _location_mask(self, candidate_idx: np.ndarray, normalized_location: str) -> np.ndarray:
+        """Return boolean mask over candidate_idx for exact normalized city/country matches."""
+        matches = np.zeros(candidate_idx.shape[0], dtype=bool)
+        for pos, row_idx in enumerate(candidate_idx):
+            city = normalize_location_text(self.city_names[int(row_idx)] if self.city_names else None)
+            country = normalize_location_text(self.country_names[int(row_idx)] if self.country_names else None)
+            country_code = normalize_location_text(self.country_codes[int(row_idx)] if self.country_codes else None)
+            if normalized_location in {city, country, country_code}:
+                matches[pos] = True
+        return matches

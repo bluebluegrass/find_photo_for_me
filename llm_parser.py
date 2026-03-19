@@ -10,7 +10,7 @@ from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from utils import default_llm_endpoint, default_llm_model, default_llm_timeout
+from utils import default_llm_endpoint, default_llm_model, default_llm_timeout, normalize_location_text
 
 LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +39,7 @@ class QueryIntent:
     objects: list[str]
     attributes: list[str]
     location_text: str | None
+    normalized_location_text: str | None
     time_text: str | None
     expanded_queries: list[str]
     parse_mode: str = "fallback"
@@ -103,6 +104,7 @@ class SmartQueryParser:
                 objects=[],
                 attributes=[],
                 location_text=None,
+                normalized_location_text=None,
                 time_text=None,
                 expanded_queries=[],
                 parse_mode="fallback",
@@ -165,6 +167,7 @@ class SmartQueryParser:
             objects=_dedupe_preserve(objects),
             attributes=_dedupe_preserve(attributes),
             location_text=location_text,
+            normalized_location_text=normalize_location_text(location_text),
             time_text=time_text,
             expanded_queries=_dedupe_preserve(expanded),
             parse_mode="llm",
@@ -190,6 +193,7 @@ class SmartQueryParser:
             objects=_dedupe_preserve(objects),
             attributes=_dedupe_preserve(attributes),
             location_text=location_text,
+            normalized_location_text=normalize_location_text(location_text),
             time_text=None,
             expanded_queries=_default_expansions(visual_query),
             parse_mode="fallback",

@@ -17,13 +17,14 @@ from utils import (
     default_llm_endpoint,
     default_llm_model,
     default_llm_timeout,
+    default_location_mode,
     load_thumbnail_array,
     open_in_finder,
 )
 
 st.set_page_config(page_title="LocalPix", layout="wide")
 st.title("LocalPix")
-st.caption("OpenCLIP + SQLite | Offline | HEIC compatible")
+st.caption("Search your photos and videos offline.")
 
 
 def _db_key(db_path: str) -> str:
@@ -49,6 +50,18 @@ def get_searcher(db_path: str) -> PhotoSearcher:
         st.session_state["searcher"] = searcher
         st.session_state["searcher_key"] = key
     return st.session_state["searcher"]
+
+
+def get_index_count(db_path: str) -> int:
+    """Return current indexed row count for header display."""
+    path = Path(db_path).expanduser().resolve()
+    if not path.exists():
+        return 0
+    store = PhotoStore(path)
+    try:
+        return store.get_total_count()
+    finally:
+        store.close()
 
 
 def run_indexing(
@@ -176,7 +189,7 @@ def delete_media_result(item: SearchResult, db_path: str) -> tuple[bool, str]:
 def render_results(results: list[SearchResult], db_path: str, columns: int = 4) -> None:
     """Render search results in thumbnail grid."""
     if not results:
-        st.info("No results found.")
+        st.info("No matches yet. Try a simpler description or relax the filters in More Search Options.")
         return
 
     cols = st.columns(columns)
@@ -190,17 +203,23 @@ def render_results(results: list[SearchResult], db_path: str, columns: int = 4) 
             else:
                 st.warning("Preview unavailable")
 
-            st.caption(f"Score: {item.score:.4f}")
+            st.markdown(f"**{path.name}**")
             if item.taken_ts is not None:
-                st.caption(f"Taken: {datetime.fromtimestamp(item.taken_ts).strftime('%Y-%m-%d %H:%M:%S')}")
-            if item.latitude is not None and item.longitude is not None:
-                st.caption(f"GPS: {item.latitude:.6f}, {item.longitude:.6f}")
+                st.caption(f"Taken: {datetime.fromtimestamp(item.taken_ts).strftime('%b %d, %Y %H:%M')}")
+            if item.city_name or item.country_name or item.country_code:
+                city = item.city_name or "-"
+                country = item.country_name or (item.country_code or "-")
+                st.caption(f"Location: {city}, {country}")
             if item.media_type == "video_frame":
                 ts_text = f"{item.frame_ts:.1f}s" if item.frame_ts is not None else "-"
                 st.caption(f"Video frame @ {ts_text}")
-                st.caption(f"Source: {Path(item.source_path).name}")
-            st.caption(path.name)
-            st.code(str(path), language=None)
+            with st.expander("Details", expanded=False):
+                st.caption(f"Score: {item.score:.4f}")
+                if item.latitude is not None and item.longitude is not None:
+                    st.caption(f"GPS: {item.latitude:.6f}, {item.longitude:.6f}")
+                if item.media_type == "video_frame":
+                    st.caption(f"Source: {Path(item.source_path).name}")
+                st.code(str(path), language=None)
             action_cols = st.columns(2)
             with action_cols[0]:
                 if st.button("Open", key=f"open_{idx}_{item.file_path}"):
@@ -223,27 +242,61 @@ def render_results(results: list[SearchResult], db_path: str, columns: int = 4) 
 
 
 with st.sidebar:
-    st.header("Settings")
-    db_path = st.text_input("DB Path", value=default_db_path())
-    model_name = st.text_input("Model", value="ViT-B-32")
-    pretrained = st.text_input("Pretrained", value="laion2b_s34b_b79k")
-    batch_size = st.number_input("Batch Size", min_value=1, max_value=256, value=32, step=1)
-    video_interval_sec = st.number_input("Video frame interval (sec)", min_value=0.1, max_value=30.0, value=1.5, step=0.1)
-    video_max_frames = st.number_input("Video max frames", min_value=1, max_value=5000, value=300, step=10)
-    video_cache_dir = st.text_input("Video frame cache dir", value=".video_frame_cache")
-    st.subheader("Smart Query")
-    smart_query_enabled = st.checkbox("Enable Smart Query (local LLM)", value=False)
-    llm_model = st.text_input("LLM Model", value=default_llm_model())
-    llm_timeout = st.number_input(
-        "LLM Timeout (sec)",
-        min_value=0.2,
-        max_value=20.0,
-        value=float(default_llm_timeout()),
-        step=0.1,
-    )
-    llm_endpoint = st.text_input("LLM Endpoint", value=default_llm_endpoint())
+    st.caption("Everything stays on this Mac.")
+    smart_query_enabled = st.checkbox("Understand natural descriptions", value=False, help="Use a local model to better understand natural-language queries.")
+    if smart_query_enabled:
+        st.caption("Examples: `black cat in turkey`, `receipt from 2023`, `whiteboard in office`")
 
-st.subheader("Index")
+    db_path = default_db_path()
+    model_name = "ViT-B-32"
+    pretrained = "laion2b_s34b_b79k"
+    batch_size = 32
+    video_interval_sec = 1.5
+    video_max_frames = 300
+    video_cache_dir = ".video_frame_cache"
+    llm_model = default_llm_model()
+    llm_timeout = float(default_llm_timeout())
+    llm_endpoint = default_llm_endpoint()
+
+    with st.expander("Technical Settings", expanded=False):
+        st.caption("Most users do not need to change these.")
+        db_path = st.text_input("Index Database Path", value=db_path)
+        model_name = st.text_input("Search Model", value=model_name)
+        pretrained = st.text_input("Model Weights", value=pretrained)
+        batch_size = st.number_input("Index Batch Size", min_value=1, max_value=256, value=batch_size, step=1)
+        video_interval_sec = st.number_input(
+            "Video sampling interval (sec)",
+            min_value=0.1,
+            max_value=30.0,
+            value=video_interval_sec,
+            step=0.1,
+        )
+        video_max_frames = st.number_input("Max sampled video frames", min_value=1, max_value=5000, value=video_max_frames, step=10)
+        video_cache_dir = st.text_input("Video frame cache folder", value=video_cache_dir)
+        if smart_query_enabled:
+            st.divider()
+            st.caption("Smart Search runtime")
+            llm_model = st.text_input("LLM Model", value=llm_model)
+            llm_timeout = st.number_input(
+                "LLM Timeout (sec)",
+                min_value=0.2,
+                max_value=20.0,
+                value=llm_timeout,
+                step=0.1,
+            )
+            llm_endpoint = st.text_input("LLM Endpoint", value=llm_endpoint)
+index_count = get_index_count(db_path)
+status_col, privacy_col = st.columns([3, 2])
+with status_col:
+    if index_count > 0:
+        st.info(f"Library ready: {index_count:,} items indexed")
+    else:
+        st.info("No library indexed yet. Start by choosing a folder below.")
+with privacy_col:
+    st.caption("LocalPix keeps indexing and search on this Mac.")
+
+st.subheader("Library")
+st.caption("Choose the folder where your photos and videos live.")
 if "index_folder" not in st.session_state:
     st.session_state["index_folder"] = ""
 if "pending_index_folder" in st.session_state:
@@ -251,7 +304,7 @@ if "pending_index_folder" in st.session_state:
 
 folder_col, actions_col = st.columns([5, 2])
 with folder_col:
-    folder = st.text_input("Photo Folder", placeholder="/Volumes/ExternalDrive/Photos", key="index_folder")
+    folder = st.text_input("Photo or Video Folder", placeholder="/Volumes/ExternalDrive/Photos", key="index_folder")
 with actions_col:
     st.write("")
     st.write("")
@@ -260,16 +313,17 @@ with actions_col:
         if selected:
             st.session_state["pending_index_folder"] = selected
             st.rerun()
-    if st.button("Open in Finder"):
+    if st.button("Open Folder"):
         current = Path(st.session_state.get("index_folder", "")).expanduser()
         if current.exists():
             open_in_finder(current)
         else:
             st.warning("Current folder path does not exist.")
 
-force_reindex = st.checkbox("Force reindex all files (backfill metadata)", value=False)
-prune_deleted = st.checkbox("Prune missing files from DB", value=False)
-if st.button("Index Folder", type="primary"):
+with st.expander("More Indexing Options", expanded=False):
+    force_reindex = st.checkbox("Recheck every file", value=False)
+    prune_deleted = st.checkbox("Remove missing files from index", value=False)
+if st.button("Index Library", type="primary"):
     run_indexing(
         folder=st.session_state.get("index_folder", folder),
         db_path=db_path,
@@ -284,26 +338,47 @@ if st.button("Index Folder", type="primary"):
     )
 
 st.subheader("Search")
-query = st.text_input("Text Query", placeholder="fridge")
-topk = st.slider("Top K", min_value=1, max_value=200, value=30, step=1)
-col1, col2, col3 = st.columns(3)
-with col1:
-    from_date = st.text_input("From date (YYYY-MM-DD)", value="")
-with col2:
-    to_date = st.text_input("To date (YYYY-MM-DD)", value="")
-with col3:
-    has_gps = st.checkbox("Only with GPS", value=False)
-col_media = st.columns(1)[0]
-with col_media:
-    media_option = st.selectbox("Media type", options=["Photo", "Video", "Both"], index=0)
-col4, col5 = st.columns(2)
-with col4:
-    min_score = st.slider("Min similarity score", min_value=0.0, max_value=1.0, value=0.22, step=0.01)
-with col5:
-    relative_to_best = st.slider("Max gap from best score", min_value=0.0, max_value=0.5, value=0.10, step=0.01)
-delete_mode = st.checkbox("Enable delete buttons (permanent)", value=False, key="delete_mode")
+st.caption("Describe what you want to find.")
+search_bar_col, search_button_col = st.columns([5, 1])
+with search_bar_col:
+    query = st.text_input(
+        "Search your library",
+        placeholder="Try: cat, black cat in turkey, receipt, whiteboard in office",
+        label_visibility="collapsed",
+    )
+with search_button_col:
+    st.write("")
+    st.write("")
+    do_search = st.button("Search", type="primary", use_container_width=True)
 
-if st.button("Search"):
+topk = st.slider("How many results", min_value=1, max_value=200, value=30, step=1)
+quick_col1, quick_col2, quick_col3 = st.columns(3)
+with quick_col1:
+    media_option = st.selectbox("Search in", options=["Photos", "Videos", "Both"], index=0)
+with quick_col2:
+    has_gps = st.checkbox("Only show items with location", value=False)
+with quick_col3:
+    delete_mode = st.checkbox("Show delete buttons", value=False, key="delete_mode")
+st.caption("Delete removes the original file from your disk.")
+
+with st.expander("More Search Options", expanded=False):
+    col1, col2 = st.columns(2)
+    with col1:
+        from_date = st.text_input("From date (YYYY-MM-DD)", value="")
+    with col2:
+        to_date = st.text_input("To date (YYYY-MM-DD)", value="")
+    location_mode_label = st.selectbox(
+        "Location matching",
+        options=["Hybrid", "Strict", "Off"],
+        index={"hybrid": 0, "strict": 1, "off": 2}.get(default_location_mode(), 0),
+    )
+    col4, col5 = st.columns(2)
+    with col4:
+        min_score = st.slider("Minimum match confidence", min_value=0.0, max_value=1.0, value=0.22, step=0.01)
+    with col5:
+        relative_to_best = st.slider("Keep results close to the best match", min_value=0.0, max_value=0.5, value=0.10, step=0.01)
+
+if do_search:
     if not query.strip():
         st.warning("Enter a query.")
     else:
@@ -325,17 +400,22 @@ if st.button("Search"):
                 st.stop()
         searcher = get_searcher(db_path)
         embedder = get_embedder(model_name=model_name, pretrained=pretrained)
-        media_filter = {"Photo": "photo", "Video": "video", "Both": "both"}[media_option]
+        media_filter = {"Photos": "photo", "Videos": "video", "Both": "both"}[media_option]
         query_text = query.strip()
         prompt_list: list[str] | None = None
+        location_query: str | None = None
+        location_mode = location_mode_label.lower()
         if smart_query_enabled:
             parser = SmartQueryParser(model=llm_model, timeout_sec=float(llm_timeout), endpoint=llm_endpoint)
             intent = parser.parse(query_text)
             st.session_state["smart_intent"] = intent
             query_text = intent.visual_query or query_text
             prompt_list = intent.expanded_queries or None
+            location_query = intent.normalized_location_text
         else:
             st.session_state.pop("smart_intent", None)
+            st.session_state.pop("location_status", None)
+            location_mode = "off"
         results = searcher.search(
             query=query_text,
             topk=topk,
@@ -347,18 +427,48 @@ if st.button("Search"):
             relative_to_best=float(relative_to_best),
             media_filter=media_filter,
             text_prompts=prompt_list,
+            location_query=location_query,
+            location_mode=location_mode,
         )
+        st.session_state["last_query"] = query.strip()
         st.session_state["results"] = results
+        st.session_state["location_status"] = {
+            "status": searcher.last_location_status,
+            "query": searcher.last_location_query,
+            "mode": searcher.last_location_mode,
+            "matches": searcher.last_location_match_count,
+        }
 
 intent = st.session_state.get("smart_intent")
 if intent is not None:
-    with st.expander("Smart Query Parse", expanded=False):
-        st.write(f"Mode: `{intent.parse_mode}`")
-        st.write(f"Visual Query: `{intent.visual_query}`")
-        st.write(f"Objects: `{intent.objects}`")
-        st.write(f"Attributes: `{intent.attributes}`")
-        st.write(f"Location: `{intent.location_text}`")
-        st.write(f"Time: `{intent.time_text}`")
-        st.write(f"Expanded Prompts: `{intent.expanded_queries}`")
+    with st.expander("How LocalPix understood your search", expanded=False):
+        st.write(f"Looking for: `{intent.visual_query}`")
+        if intent.location_text:
+            st.write(f"Place: `{intent.location_text}`")
+        if intent.time_text:
+            st.write(f"Time: `{intent.time_text}`")
 
-render_results(st.session_state.get("results", []), db_path=db_path)
+location_status = st.session_state.get("location_status")
+if location_status and location_status.get("query"):
+    status = location_status.get("status")
+    query_text = location_status.get("query")
+    if status == "hybrid_applied":
+        st.info(f"Using location match: `{query_text}`.")
+    elif status == "hybrid_fallback_no_match":
+        st.info(f"No indexed items matched `{query_text}`, so LocalPix showed the closest visual results instead.")
+    elif status == "strict_applied":
+        st.info(f"Showing only results that match `{query_text}`.")
+    elif status == "strict_no_match":
+        st.warning(f"No indexed items matched `{query_text}` with strict location matching.")
+
+results = st.session_state.get("results")
+last_query = st.session_state.get("last_query")
+if results:
+    st.subheader("Results")
+    st.caption(f"{len(results)} matches for “{last_query}”")
+elif last_query:
+    st.subheader("Results")
+    st.info(f"No matches for “{last_query}”. Try a simpler description or relax the search options.")
+
+if results is not None:
+    render_results(results, db_path=db_path)

@@ -5,3 +5,4 @@ Pillow>=10.0
 pillow-heif>=0.15.0
 streamlit>=1.32
 tqdm>=4.66
+reverse_geocoder>=1.5.1

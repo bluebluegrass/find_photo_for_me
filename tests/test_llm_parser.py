@@ -19,6 +19,7 @@ class SmartQueryParserTests(unittest.TestCase):
         self.assertEqual(intent.parse_mode, "fallback")
         self.assertEqual(intent.visual_query, "black cat")
         self.assertEqual(intent.location_text, "turkey")
+        self.assertEqual(intent.normalized_location_text, "turkey")
         self.assertIn("cat", [x.lower() for x in intent.objects])
         self.assertIn("black", [x.lower() for x in intent.attributes])
         self.assertGreaterEqual(len(intent.expanded_queries), 1)
@@ -39,6 +40,7 @@ class SmartQueryParserTests(unittest.TestCase):
         self.assertEqual(intent.parse_mode, "llm")
         self.assertEqual(intent.visual_query, "black cat")
         self.assertEqual(intent.location_text, "Turkey")
+        self.assertEqual(intent.normalized_location_text, "turkey")
         self.assertEqual(intent.objects, ["cat"])
 
     def test_llm_bad_output_falls_back(self) -> None:
