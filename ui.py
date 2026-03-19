@@ -167,6 +167,42 @@ st.markdown(
         font-size: 0.98rem;
     }
 
+    .lp-filename {
+        font-family: "Avenir Next", "Segoe UI", sans-serif;
+        font-size: 1.02rem;
+        font-weight: 700;
+        line-height: 1.28;
+        color: var(--lp-ink);
+        margin: 0.72rem 0 0.45rem 0;
+        min-height: 2.6em;
+    }
+
+    .lp-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin: 0 0 0.6rem 0;
+    }
+
+    .lp-meta-chip {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        padding: 0.3rem 0.62rem;
+        background: rgba(240, 230, 216, 0.64);
+        border: 1px solid rgba(94, 78, 60, 0.1);
+        color: #584f43;
+        font-size: 0.77rem;
+        line-height: 1.2;
+        white-space: nowrap;
+    }
+
+    .lp-card-divider {
+        height: 1px;
+        background: linear-gradient(90deg, rgba(94, 78, 60, 0.14), rgba(94, 78, 60, 0.02));
+        margin: 0.55rem 0 0.8rem 0;
+    }
+
     div[data-testid="stExpander"] {
         border: 1px solid var(--lp-line);
         border-radius: 18px;
@@ -409,7 +445,7 @@ def delete_media_result(item: SearchResult, db_path: str) -> tuple[bool, str]:
     return delete_photo_and_index(item.file_path, db_path)
 
 
-def render_results(results: list[SearchResult], db_path: str, columns: int = 4) -> None:
+def render_results(results: list[SearchResult], db_path: str, columns: int = 3) -> None:
     """Render search results in thumbnail grid."""
     if not results:
         st.info("No matches yet. Try a simpler description or relax the filters in More Search Options.")
@@ -426,17 +462,30 @@ def render_results(results: list[SearchResult], db_path: str, columns: int = 4) 
             else:
                 st.warning("Preview unavailable")
 
-            st.markdown(f"**{path.name}**")
+            st.markdown(f'<div class="lp-filename">{path.name}</div>', unsafe_allow_html=True)
+
+            meta_chips: list[str] = []
             if item.taken_ts is not None:
-                st.caption(f"Taken: {datetime.fromtimestamp(item.taken_ts).strftime('%b %d, %Y %H:%M')}")
+                meta_chips.append(datetime.fromtimestamp(item.taken_ts).strftime("%b %d, %Y"))
             if item.city_name or item.country_name or item.country_code:
-                city = item.city_name or "-"
-                country = item.country_name or (item.country_code or "-")
-                st.caption(f"Location: {city}, {country}")
+                city = item.city_name or None
+                country = item.country_name or item.country_code
+                place = ", ".join([p for p in [city, country] if p])
+                if place:
+                    meta_chips.append(place)
             if item.media_type == "video_frame":
                 ts_text = f"{item.frame_ts:.1f}s" if item.frame_ts is not None else "-"
-                st.caption(f"Video frame @ {ts_text}")
-            with st.expander("Details", expanded=False):
+                meta_chips.append(f"Video @ {ts_text}")
+
+            if meta_chips:
+                chips_html = "".join(f'<span class="lp-meta-chip">{chip}</span>' for chip in meta_chips)
+                st.markdown(f'<div class="lp-meta">{chips_html}</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="lp-meta"><span class="lp-meta-chip">No date or location</span></div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="lp-card-divider"></div>', unsafe_allow_html=True)
+
+            with st.expander("View details", expanded=False):
                 st.caption(f"Score: {item.score:.4f}")
                 if item.latitude is not None and item.longitude is not None:
                     st.caption(f"GPS: {item.latitude:.6f}, {item.longitude:.6f}")
@@ -445,14 +494,19 @@ def render_results(results: list[SearchResult], db_path: str, columns: int = 4) 
                 st.code(str(path), language=None)
             action_cols = st.columns(2)
             with action_cols[0]:
-                if st.button("Open", key=f"open_{idx}_{item.file_path}"):
+                if st.button("Open", key=f"open_{idx}_{item.file_path}", use_container_width=True):
                     open_target = Path(item.source_path) if item.media_type == "video_frame" else path
                     ok = open_in_finder(open_target)
                     if not ok:
                         st.error(f"Failed to open: {open_target}")
             with action_cols[1]:
                 if st.session_state.get("delete_mode", False):
-                    if st.button("Delete", key=f"delete_{idx}_{item.file_path}", type="secondary"):
+                    if st.button(
+                        "Delete",
+                        key=f"delete_{idx}_{item.file_path}",
+                        type="secondary",
+                        use_container_width=True,
+                    ):
                         ok, msg = delete_media_result(item, db_path)
                         if ok:
                             st.success(msg)
